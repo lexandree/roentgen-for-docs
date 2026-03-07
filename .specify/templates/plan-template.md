@@ -31,7 +31,11 @@
 
 *GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
 
-[Gates determined based on constitution file]
+- [ ] Does it ensure patient data confidentiality? (Principle I: Security First)
+- [ ] Are Telegram handlers, API logic, and inference separated? (Principle II: Modularity)
+- [ ] Is graceful error handling implemented for network timeouts? (Principle III: Robustness)
+- [ ] Is user context isolated? (Principle IV: Privacy)
+- [ ] Is the Telegram bot acting as a lightweight relay? (Principle VI: Stateless/Stateful Design)
 
 ## Project Structure
 

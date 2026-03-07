@@ -150,12 +150,13 @@ Examples of foundational tasks (adjust based on your project):
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [ ] TXXX [P] Documentation updates in docs/
-- [ ] TXXX Code cleanup and refactoring
-- [ ] TXXX Performance optimization across all stories
+- [ ] TXXX [P] Verify no sensitive medical data is logged
+- [ ] TXXX Test network timeout scenarios and graceful degradation
+- [ ] TXXX Ensure user context isolation is robust
+- [ ] TXXX Evaluate MedGemma inference latency and apply optimizations if needed
+- [ ] TXXX Security hardening of the local-to-cloud tunnel
 - [ ] TXXX [P] Additional unit tests (if requested) in tests/unit/
-- [ ] TXXX Security hardening
-- [ ] TXXX Run quickstart.md validation
+- [ ] TXXX Performance optimization across all stories
 
 ---
 

@@ -95,6 +95,12 @@
 - **FR-006**: System MUST authenticate users via [NEEDS CLARIFICATION: auth method not specified - email/password, SSO, OAuth?]
 - **FR-007**: System MUST retain user data for [NEEDS CLARIFICATION: retention period not specified]
 
+### Constitution Requirements
+
+- **CR-001**: Feature MUST strictly avoid logging sensitive medical data (Principle I).
+- **CR-002**: Feature MUST implement graceful error handling for network timeouts (Principle III).
+- **CR-003**: Feature MUST securely manage and isolate user context (Principle IV).
+
 ### Key Entities *(include if feature involves data)*
 
 - **[Entity 1]**: [What it represents, key attributes without implementation]

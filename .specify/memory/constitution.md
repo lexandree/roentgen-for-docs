@@ -1,50 +1,61 @@
-# [PROJECT_NAME] Constitution
-<!-- Example: Spec Constitution, TaskFlow Constitution, etc. -->
+<!--
+Sync Impact Report:
+- Version change: 0.2.0 → 0.3.0
+- Modified principles: none
+- Added sections: Language Policy
+- Removed sections: none
+- Templates requiring updates:
+  - .specify/templates/plan-template.md: ✅ updated
+  - .specify/templates/spec-template.md: ✅ updated
+  - .specify/templates/tasks-template.md: ✅ updated
+- Follow-up TODOs: None.
+-->
+# MedGemma for Doctors Constitution
+
+## Role & Context
+You are an expert AI Engineer and Senior Backend Developer. The project focuses on creating a secure, medical-focused AI assistant using MedGemma 1.5, accessed via a Telegram bot.
+
+## Language Policy
+- **Documentation**: ALL documentation (specs, plans, tasks, constitutional documents) MUST be written in English.
+- **Code**: All code, comments, logs, and technical terms MUST be in English.
+- **Communication**: Use the user's language for chat interaction (Russian), but all persisted project artifacts remain in English.
 
 ## Core Principles
 
-### [PRINCIPLE_1_NAME]
-<!-- Example: I. Library-First -->
-[PRINCIPLE_1_DESCRIPTION]
-<!-- Example: Every feature starts as a standalone library; Libraries must be self-contained, independently testable, documented; Clear purpose required - no organizational-only libraries -->
+### I. Security First
+Patient data confidentiality is paramount. No sensitive medical data MUST be persistently logged on the external Oracle server. Rationale: Compliance with medical data privacy regulations and building doctor trust.
 
-### [PRINCIPLE_2_NAME]
-<!-- Example: II. CLI Interface -->
-[PRINCIPLE_2_DESCRIPTION]
-<!-- Example: Every library exposes functionality via CLI; Text in/out protocol: stdin/args → stdout, errors → stderr; Support JSON + human-readable formats -->
+### II. Modularity
+Clearly separate Telegram handlers, external API communication logic, and local model inference layers. Rationale: Eases testing and allows independent scaling or replacing of the frontend bot without touching the local AI backend.
 
-### [PRINCIPLE_3_NAME]
-<!-- Example: III. Test-First (NON-NEGOTIABLE) -->
-[PRINCIPLE_3_DESCRIPTION]
-<!-- Example: TDD mandatory: Tests written → User approved → Tests fail → Then implement; Red-Green-Refactor cycle strictly enforced -->
+### III. Robustness
+Implement graceful error handling, especially for network timeouts if the local MedGemma instance becomes temporarily unreachable. Rationale: Internet connections to local servers can drop; the bot must not crash and should inform the user politely.
 
-### [PRINCIPLE_4_NAME]
-<!-- Example: IV. Integration Testing -->
-[PRINCIPLE_4_DESCRIPTION]
-<!-- Example: Focus areas requiring integration tests: New library contract tests, Contract changes, Inter-service communication, Shared schemas -->
+### IV. Privacy
+Ensure that context and chat history are securely managed and isolated between different users (doctors). Rationale: Prevents cross-contamination of patient queries between different medical professionals.
 
-### [PRINCIPLE_5_NAME]
-<!-- Example: V. Observability, VI. Versioning & Breaking Changes, VII. Simplicity -->
-[PRINCIPLE_5_DESCRIPTION]
-<!-- Example: Text I/O ensures debuggability; Structured logging required; Or: MAJOR.MINOR.BUILD format; Or: Start simple, YAGNI principles -->
+### V. Inference Optimization
+Ensure local MedGemma inference is optimized (e.g., utilizing appropriate quantization, GPU acceleration, or frameworks like vLLM) for acceptable response latency. Rationale: Doctors need quick answers during their workflow.
 
-## [SECTION_2_NAME]
-<!-- Example: Additional Constraints, Security Requirements, Performance Standards, etc. -->
+### VI. Stateless/Stateful Design
+The Telegram bot MUST act as a lightweight relay. Heavy state management SHOULD ideally be kept secure or encrypted if stored on the cloud. Rationale: Minimizes attack surface on the public-facing cloud instance.
 
-[SECTION_2_CONTENT]
-<!-- Example: Technology stack requirements, compliance standards, deployment policies, etc. -->
+## Tech Stack Preferences
 
-## [SECTION_3_NAME]
-<!-- Example: Development Workflow, Review Process, Quality Gates, etc. -->
+- **Language**: Python 3.12+ (managed via Conda)
+- **AI Model**: MedGemma 1.5 (run locally for data security and medical privacy)
+- **Bot Framework**: `aiogram` (preferred for async Telegram bots) or `python-telegram-bot`
 
-[SECTION_3_CONTENT]
-<!-- Example: Code review requirements, testing gates, deployment approval process, etc. -->
+## Infrastructure & Deployment
+
+- **Frontend/Bot**: Hosted remotely on Oracle Cloud Free Tier.
+- **Backend/Model**: MedGemma 1.5 running on a secure local server.
+- **Networking**: Secure communication between Oracle Cloud and the local server (e.g., via VPN, SSH tunnel, or HTTPS API with strict token authentication).
 
 ## Governance
-<!-- Example: Constitution supersedes all other practices; Amendments require documentation, approval, migration plan -->
 
-[GOVERNANCE_RULES]
-<!-- Example: All PRs/reviews must verify compliance; Complexity must be justified; Use [GUIDANCE_FILE] for runtime development guidance -->
+Amendments to this constitution MUST be proposed via PR, clearly state the rationale for the change, and require approval from core maintainers.
+All PRs/reviews MUST verify compliance.
+Version numbers MUST follow Semantic Versioning.
 
-**Version**: [CONSTITUTION_VERSION] | **Ratified**: [RATIFICATION_DATE] | **Last Amended**: [LAST_AMENDED_DATE]
-<!-- Example: Version: 2.1.1 | Ratified: 2025-06-13 | Last Amended: 2025-07-16 -->
+**Version**: 0.3.0 | **Ratified**: 2026-03-07 | **Last Amended**: 2026-03-07
