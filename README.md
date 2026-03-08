@@ -107,3 +107,43 @@ This machine runs the Telegram bot and forwards requests to your local server. A
 ## Usage
 
 Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted, the bot will respond, and you can begin sending text queries or uncompressed images for analysis.
+
+## Troubleshooting
+
+### Reverse SSH Tunnel: `Connection refused`
+
+When creating the reverse SSH tunnel from your Local Server, you might encounter a `ssh: connect to host <your-cloud-server-ip> port 22: Connection refused` error. This almost always means a firewall on the **Cloud Server** is blocking the connection.
+
+Follow these steps on the **Cloud Server** to resolve it:
+
+1.  **Check the Firewall Status**:
+    The most common firewall on Ubuntu/Debian is `ufw`. Check its status:
+    ```bash
+    sudo ufw status
+    ```
+    If the status is `active`, it is likely blocking the SSH port.
+
+2.  **Allow SSH Connections**:
+    If the firewall is active, add a rule to allow incoming SSH traffic:
+    ```bash
+    sudo ufw allow ssh
+    ```
+    Or by port number:
+    ```bash
+    sudo ufw allow 22
+    ```
+    You should see a `Rule added` confirmation. Now, try creating the SSH tunnel again from your Local Server.
+
+3.  **Check the SSH Service**:
+    On modern Linux systems, the SSH service might not run constantly. It's activated by a socket. If you've opened the firewall and still have issues, ensure the SSH service is running on the **Cloud Server**:
+    ```bash
+    sudo systemctl start ssh
+    ```
+    Then check its status to ensure it's `active (running)`:
+    ```bash
+    sudo systemctl status ssh
+    ```
+    If this solves the problem, you can enable it permanently, so it starts on boot:
+    ```bash
+    sudo systemctl enable ssh
+    ```
