@@ -1,4 +1,5 @@
 # Python
+# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -19,3 +20,12 @@ venv.bak/
 # Databases
 *.sqlite3
 *.db
+
+# Credentials & Secrets
+**/gdrive_credentials.json
+gdrive_credentials.json
+
+# Temporary files & directories
+/tmp/
+tmp/
+

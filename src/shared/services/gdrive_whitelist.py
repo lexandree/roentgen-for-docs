@@ -29,8 +29,12 @@ class GDriveWhitelistService:
             whitelist = []
             for line in content_str.splitlines():
                 line = line.strip()
-                if line and line.isdigit():
-                    whitelist.append(int(line))
+                if not line:
+                    continue
+                # Take the first part of the line, splitting by whitespace, to allow for comments
+                user_id_str = line.split()[0]
+                if user_id_str.isdigit():
+                    whitelist.append(int(user_id_str))
             return whitelist
         except Exception as e:
             logger.error(f"Failed to fetch whitelist from Google Drive: {e}")

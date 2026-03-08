@@ -27,12 +27,24 @@ async def main():
     
     args = parser.parse_args()
     
-    if args.init:
+    # Always ensure the database and its tables are initialized before any operation
+    if args.init or args.add_user:
+        db_path = settings.db_path.replace("sqlite+aiosqlite:///", "")
+        db_dir = os.path.dirname(db_path)
+        # Create the directory only if it has a name and doesn't exist
+        if db_dir and not os.path.exists(db_dir):
+            os.makedirs(db_dir)
+            print(f"Created database directory: {db_dir}")
+
         await init_db()
-        print("Database tables initialized.")
+        if args.init:
+            print("Database tables initialized.")
         
     if args.add_user:
         await add_user(args.add_user, args.name)
+    
+    if not args.init and not args.add_user:
+        parser.print_help()
 
 if __name__ == "__main__":
     asyncio.run(main())
