@@ -1,24 +1,47 @@
+# src/api/services/inference.py
 import logging
-import os
+import asyncio
 
 logger = logging.getLogger(__name__)
 
-class InferenceService:
-    async def generate_response(self, text: str | None, image_path: str | None, history: list) -> str:
-        logger.info(f"Generating response. Text: {text}, Image: {image_path}, History: {len(history)} items")
+# --- Model Singleton ---
+# This pattern ensures we only load the (very large) model into memory once.
+class MedGemmaModel:
+    def __init__(self):
+        # In a real scenario, this is where you would load the model from disk
+        # and move it to the GPU, which can take a long time.
+        # e.g., self.model = transformers.AutoModelFor...
+        # self.model.to("cuda")
+        logger.info("--- MedGemmaModel Initialized (Placeholder) ---")
+        self.is_ready = True
+
+    async def perform_inference(self, image_bytes: bytes, caption: str | None) -> str:
+        """
+        This function simulates running the actual inference on the GPU.
+        """
+        logger.info(f"Performing inference on image ({len(image_bytes)} bytes) with caption: '{caption}'")
         
-        if image_path:
-            logger.info(f"Vectorizing image {image_path} into KV-cache...")
-            # Simulate MedGemma processing
-            # In real implementation: model.process_image(image_path)
+        # Simulate a delay as if the GPU is working
+        await asyncio.sleep(2.5) 
+        
+        report = "This is a mocked diagnostic report from the MedGemma 1.5 Worker."
+        if caption:
+            report += f"
+Analysis based on your query: '{caption}'"
             
-            # Mandated immediate deletion of physical image file after vectorization
-            try:
-                os.remove(image_path)
-                logger.info(f"Successfully deleted physical image {image_path} after vectorization.")
-            except Exception as e:
-                logger.error(f"Failed to delete physical image {image_path}: {e}")
+        logger.info("Inference complete.")
+        return report
 
-        return "This is a mocked response from MedGemma 1.5 based on your input and visual context."
+# Create a single instance of the model to be shared across the application
+model_instance = None
 
-inference_service = InferenceService()
+def get_model() -> MedGemmaModel:
+    """
+    FastAPI dependency to get the shared model instance.
+    This function will be called for every request that needs the model.
+    """
+    global model_instance
+    if model_instance is None:
+        # This will only run once, when the first request comes in
+        model_instance = MedGemmaModel()
+    return model_instance

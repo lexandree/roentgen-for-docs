@@ -1,9 +1,54 @@
 import uuid
 import os
+import random
+import base64
+import httpx
 from datetime import datetime, timezone
 from src.api.db.database import get_db
+from src.api.config import settings
+
+# A single, reusable httpx client for performance
+# It's important to manage the client's lifecycle in a real FastAPI app (e.g., with lifespan events)
+# but for this service, a module-level client is sufficient.
+http_client = httpx.AsyncClient(timeout=300.0)
 
 class ChatManager:
+
+    async def dispatch_inference_to_worker(self, image_bytes: bytes, caption: str | None) -> str:
+        """
+        Selects a worker, encodes the image, and sends the inference request.
+        """
+        if not settings.inference_worker_urls:
+            raise ValueError("No inference worker URLs configured.")
+
+        # Simple load balancing: pick a random worker
+        worker_url = random.choice(settings.inference_worker_urls)
+        inference_endpoint = f"{worker_url.rstrip('/')}/infer"
+
+        # Encode image bytes to base64 for safe JSON transport
+        image_bytes_b64 = base64.b64encode(image_bytes).decode('utf-8')
+
+        payload = {
+            "image_bytes_b64": image_bytes_b64,
+            "caption": caption
+        }
+
+        try:
+            response = await http_client.post(inference_endpoint, json=payload, timeout=settings.request_timeout)
+            response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
+            
+            response_data = response.json()
+            return response_data.get("report", "Worker did not return a valid report.")
+
+        except httpx.HTTPStatusError as e:
+            # The worker returned an error response (e.g., 500)
+            print(f"Error from worker {worker_url}: {e.response.text}")
+            raise Exception(f"Inference worker failed with status {e.response.status_code}: {e.response.text}")
+        except httpx.RequestError as e:
+            # Network-level error (e.g., can't connect)
+            print(f"Could not connect to worker {worker_url}: {e}")
+            raise Exception(f"Failed to connect to inference worker: {e}")
+
     async def get_or_create_session(self, telegram_id: int, db) -> str:
         cursor = await db.execute("SELECT session_id, last_activity FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
         row = await cursor.fetchone()
@@ -42,16 +87,6 @@ class ChatManager:
         cursor = await db.execute("SELECT role, content FROM message_history WHERE session_id = ? ORDER BY timestamp ASC", (session_id,))
         rows = await cursor.fetchall()
         return [{"role": r["role"], "content": r["content"]} for r in rows]
-
-    async def save_temp_image(self, session_id: str, file_content: bytes) -> str:
-        temp_dir = "temp_images"
-        if not os.path.exists(temp_dir):
-            os.makedirs(temp_dir)
-        
-        image_path = os.path.join(temp_dir, f"{session_id}_{uuid.uuid4()}.jpg")
-        with open(image_path, "wb") as f:
-            f.write(file_content)
-        return image_path
 
     async def set_active_image(self, session_id: str, has_active: bool, db):
         await db.execute("UPDATE session_contexts SET has_active_image = ? WHERE session_id = ?", (int(has_active), session_id))

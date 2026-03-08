@@ -4,7 +4,6 @@ import aiosqlite
 from src.api.db.database import get_db
 from src.api.services.auth import auth_service
 from src.api.services.chat_manager import chat_manager
-from src.api.services.inference import inference_service
 from src.api.config import settings
 from src.shared.services.gdrive_storage import GDriveStorageService
 
@@ -34,42 +33,48 @@ async def process_message(
 
     try:
         session_id = await chat_manager.get_or_create_session(telegram_id, db)
+        response_text = ""
 
-        image_path = None
+        await chat_manager.update_interaction_log(log_id, "processing", db)
+
         if image:
             if image.content_type not in ["image/jpeg", "image/png"]:
                 raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
 
             file_content = await image.read()
-            image_path = await chat_manager.save_temp_image(session_id, file_content)
+
+            # Dispatch to a worker instead of saving locally
+            response_text = await chat_manager.dispatch_inference_to_worker(
+                image_bytes=file_content,
+                caption=text
+            )
             await chat_manager.set_active_image(session_id, True, db)
+
+        elif text:
+            # For text-only messages, we can eventually add a text-only model worker.
+            # For now, we'll just mock a response.
+            response_text = "This is a mocked response for a text-only query. The dispatcher is working."
 
         if text:
             await chat_manager.add_message(session_id, "user", text, db)
 
-        await chat_manager.update_interaction_log(log_id, "processing", db)
+        final_response = f"[{route.upper()}-WORKER] {response_text}"
 
-        history = await chat_manager.get_history(session_id, db)
-
-        # Inference handles image deletion after vectorization
-        response_text = await inference_service.generate_response(text, image_path, history)
-
-        response_text = f"[{route.upper()}] {response_text}"
-
-        await chat_manager.add_message(session_id, "assistant", response_text, db)
-        
+        await chat_manager.add_message(session_id, "assistant", final_response, db)
         await chat_manager.update_interaction_log(log_id, "completed", db)
 
         return {
             "status": "success", 
             "data": {
-                "response": response_text,
+                "response": final_response,
                 "log_id": log_id
             }
         }
     except Exception as e:
         await chat_manager.update_interaction_log(log_id, "failed", db)
-        raise HTTPException(status_code=500, detail=str(e))
+        # Log the full error for debugging
+        print(f"!!! DISPATCHER ERROR in /message: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {e}")
 
 @router.post("/clear")
 async def clear_chat(data: dict, db: aiosqlite.Connection = Depends(get_db)):
@@ -110,7 +115,7 @@ async def process_batch(
 
     try:
         await chat_manager.update_interaction_log(log_id, "processing", db)
-        
+
         gdrive_service = GDriveStorageService(
             credentials_json=settings.google_drive_credentials_json,
             root_folder_id=settings.gdrive_batch_folder_id
@@ -122,12 +127,12 @@ async def process_batch(
                 raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
             content = await image.read()
             files_data.append((image.filename, content, image.content_type))
-            
+
         uploaded_ids = gdrive_service.upload_batch(telegram_id, files_data)
-        
+
         # Batch is successfully queued in GDrive for processing
         await chat_manager.update_interaction_log(log_id, "completed", db)
-        
+
         return {
             "status": "queued",
             "data": {
@@ -153,7 +158,7 @@ async def cancel_batch(data: dict, db: aiosqlite.Connection = Depends(get_db)):
         credentials_json=settings.google_drive_credentials_json,
         root_folder_id=settings.gdrive_batch_folder_id
     )
-    
+
     success = gdrive_service.delete_user_folder(telegram_id)
     if success:
         return {"status": "success", "data": {"message": "Batch cancelled and files cleaned up."}}

@@ -1,8 +1,8 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import model_validator
+from pydantic import model_validator, Field
 import json
 import os
-from typing import Optional
+from typing import Optional, List
 
 class APISettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8')
@@ -12,6 +12,18 @@ class APISettings(BaseSettings):
     whitelist_file_id: Optional[str] = None
     gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
+    
+    # List of worker URLs, comma-separated in the .env file
+    inference_worker_urls: List[str] = Field(default=["http://127.0.0.1:8001"])
+
+    @model_validator(mode='before')
+    @classmethod
+    def split_worker_urls(cls, values):
+        """Allow comma-separated string for worker URLs in the env file."""
+        worker_urls = values.get('inference_worker_urls')
+        if worker_urls and isinstance(worker_urls, str):
+            values['inference_worker_urls'] = [url.strip() for url in worker_urls.split(',')]
+        return values
 
     @model_validator(mode='after')
     def load_gdrive_credentials(self) -> 'APISettings':
