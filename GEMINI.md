@@ -5,6 +5,8 @@ Auto-generated from all feature plans. Last updated: 2026-03-07
 ## Active Technologies
 - Python 3.12+ (managed via Conda) + `aiogram` (bot framework), `FastAPI` (local inference API), `httpx` (async HTTP client for bot), `pydantic` (data validation), `google-api-python-client` (for Google Drive whitelist fetch) (001-diagnostic-bot-core)
 - SQLite (for managing user sessions, context history, and caching the whitelist on the local server), Google Drive (source of truth for whitelist) (001-diagnostic-bot-core)
+- Python 3.12+ + `aiogram` (for FSM and Telegram handling), `FastAPI` (for routing endpoints), `aiosqlite` (for DB interaction logs), `google-api-python-client` (for Drive folder management) (002-multi-model-dispatcher)
+- SQLite (`local_data.db`), Google Drive (isolated user folders for Colab batches), MemoryStorage/Redis (for `aiogram` FSM) (002-multi-model-dispatcher)
 
 - Python 3.12+ (managed via Conda) + `aiogram` (bot framework), `FastAPI` (local inference API), `httpx` (async HTTP client for bot), `pydantic` (data validation) (001-diagnostic-bot-core)
 
@@ -24,6 +26,7 @@ cd src [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNOLO
 Python 3.12+ (managed via Conda): Follow standard conventions
 
 ## Recent Changes
+- 002-multi-model-dispatcher: Added Python 3.12+ + `aiogram` (for FSM and Telegram handling), `FastAPI` (for routing endpoints), `aiosqlite` (for DB interaction logs), `google-api-python-client` (for Drive folder management)
 - 001-diagnostic-bot-core: Added Python 3.12+ (managed via Conda) + `aiogram` (bot framework), `FastAPI` (local inference API), `httpx` (async HTTP client for bot), `pydantic` (data validation), `google-api-python-client` (for Google Drive whitelist fetch)
 
 - 001-diagnostic-bot-core: Added Python 3.12+ (managed via Conda) + `aiogram` (bot framework), `FastAPI` (local inference API), `httpx` (async HTTP client for bot), `pydantic` (data validation)
