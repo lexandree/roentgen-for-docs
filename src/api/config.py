@@ -10,6 +10,7 @@ class APISettings(BaseSettings):
     google_drive_credentials_json: Optional[str] = None
     google_drive_credentials_file_path: Optional[str] = "gdrive_credentials.json"
     whitelist_file_id: Optional[str] = None
+    gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
 
     @model_validator(mode='after')

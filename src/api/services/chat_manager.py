@@ -67,4 +67,25 @@ class ChatManager:
             await db.commit()
             # In a real system, we'd also tell the model to drop the KV-cache for this session
 
+    async def create_interaction_log(self, telegram_id: int, route: str, task_type: str, images_count: int, db) -> int:
+        cursor = await db.execute(
+            "INSERT INTO interaction_logs (telegram_id, route, task_type, images_count, status) VALUES (?, ?, ?, ?, 'queued')",
+            (telegram_id, route, task_type, images_count)
+        )
+        await db.commit()
+        return cursor.lastrowid
+
+    async def update_interaction_log(self, log_id: int, status: str, db):
+        if status in ['completed', 'failed']:
+            await db.execute(
+                "UPDATE interaction_logs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
+                (status, log_id)
+            )
+        else:
+            await db.execute(
+                "UPDATE interaction_logs SET status = ? WHERE id = ?",
+                (status, log_id)
+            )
+        await db.commit()
+
 chat_manager = ChatManager()

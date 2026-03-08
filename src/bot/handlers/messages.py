@@ -1,7 +1,10 @@
-from aiogram import Router, types
+from aiogram import Router, types, F
 from aiogram.filters import Command
+from aiogram.fsm.context import FSMContext
 from src.bot.services.auth import auth_service
 from src.bot.services.api_client import api_client
+from src.bot.states import AnalysisSession
+from io import BytesIO
 
 router = Router()
 
@@ -12,21 +15,97 @@ async def cmd_start(message: types.Message):
         return
     await message.answer("Welcome to MedGemma Diagnostic Bot. You can send me a text query or upload an X-ray/MRI image for analysis.")
 
-@router.message(Command("clear"))
-async def cmd_clear(message: types.Message):
+@router.message(Command("analyze"))
+async def cmd_analyze(message: types.Message, state: FSMContext):
     if not auth_service.is_user_whitelisted(message.from_user.id):
         return
-    success = await api_client.clear_session(message.from_user.id)
-    if success:
-        await message.answer("Conversation context and active image have been cleared.")
+    await state.clear()
+    await state.set_state(AnalysisSession.waiting_for_batch_images)
+    await state.update_data(images=[], caption="")
+    await message.answer("Режим пакетной загрузки активирован. Отправьте серию снимков (по одному или альбомом).")
+
+@router.message(Command("clear"))
+async def cmd_clear(message: types.Message, state: FSMContext):
+    if not auth_service.is_user_whitelisted(message.from_user.id):
+        return
+    
+    current_state = await state.get_state()
+    if current_state:
+        await state.clear()
+        
+    # Always call both clears just to be safe
+    success_session = await api_client.clear_session(message.from_user.id)
+    success_batch = await api_client.cancel_batch(message.from_user.id)
+    
+    if success_session or success_batch:
+        await message.answer("Conversation context and pending batches have been cleared.")
     else:
-        await message.answer("Failed to clear session on the server.")
+        await message.answer("Cleared local state, but encountered an issue clearing remote server state.")
 
 @router.message(Command("refresh_whitelist"))
 async def cmd_refresh_whitelist(message: types.Message):
     # In a real scenario, you might restrict this to admins
     auth_service.sync_whitelist()
     await message.answer("Whitelist has been refreshed from Google Drive.")
+
+@router.callback_query(AnalysisSession.waiting_for_route, F.data.startswith("route_"))
+async def process_route_selection(callback: types.CallbackQuery, state: FSMContext):
+    if not auth_service.is_user_whitelisted(callback.from_user.id):
+        await callback.answer("Unauthorized", show_alert=True)
+        return
+
+    route = callback.data.replace("route_", "")
+    data = await state.get_data()
+    file_id = data.get("file_id")
+    images = data.get("images", [])
+    caption = data.get("caption")
+
+    await state.clear()
+    
+    await callback.message.edit_text(f"Маршрут выбран: {route.upper()}. Начинаю загрузку...")
+    await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="upload_photo")
+
+    try:
+        # Determine if this is a batch or single image request
+        if len(images) > 1 or (not file_id and images):
+            # Batch processing
+            images_bytes = []
+            for img_id in images:
+                if img_id == "ignored":
+                    continue
+                file_in_memory = BytesIO()
+                await callback.bot.download(img_id, destination=file_in_memory)
+                images_bytes.append(file_in_memory.getvalue())
+                
+            response = await api_client.send_batch(
+                callback.from_user.id,
+                images_bytes=images_bytes,
+                route=route,
+                text=caption
+            )
+        else:
+            # Single image processing
+            img_id_to_use = file_id or (images[0] if images else None)
+            if not img_id_to_use:
+                await callback.message.answer("No image to process.")
+                return
+                
+            file_in_memory = BytesIO()
+            await callback.bot.download(img_id_to_use, destination=file_in_memory)
+            image_bytes = file_in_memory.getvalue()
+
+            response = await api_client.send_message(
+                callback.from_user.id, 
+                text=caption, 
+                image_bytes=image_bytes,
+                route=route
+            )
+        
+        await callback.message.answer(response)
+    except Exception as e:
+        await callback.message.answer(f"Failed to download/process images: {e}")
+    finally:
+        await callback.answer()
 
 @router.message()
 async def handle_unsupported_message(message: types.Message):
@@ -42,3 +121,4 @@ async def handle_unsupported_message(message: types.Message):
     else:
         # Unsupported format (document, video, etc)
         await message.answer("Unsupported file format. Please upload an X-ray or MRI image (JPEG/PNG) or send a text query.")
+

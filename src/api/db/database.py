@@ -40,4 +40,17 @@ async def init_db():
                 FOREIGN KEY(session_id) REFERENCES session_contexts(session_id) ON DELETE CASCADE
             )
         """)
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS interaction_logs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                telegram_id INTEGER NOT NULL,
+                route TEXT NOT NULL,
+                task_type TEXT NOT NULL,
+                images_count INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                completed_at TIMESTAMP,
+                FOREIGN KEY(telegram_id) REFERENCES users(telegram_id)
+            )
+        """)
         await db.commit()

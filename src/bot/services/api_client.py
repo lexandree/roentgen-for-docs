@@ -9,9 +9,12 @@ class APIClient:
         self.base_url = settings.local_api_url
         self.timeout = settings.request_timeout
 
-    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None) -> str:
+    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str = "local") -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            data = {"telegram_id": telegram_id}
+            data = {
+                "telegram_id": telegram_id,
+                "route": route
+            }
             if text:
                 data["text"] = text
             
@@ -23,7 +26,9 @@ class APIClient:
                 response = await client.post(f"{self.base_url}/chat/message", data=data, files=files)
                 response.raise_for_status()
                 result = response.json()
-                return result.get("response", "No response from AI.")
+                # Use the new nested format from Phase 1, fallback to old if not found
+                data_dict = result.get("data", {})
+                return data_dict.get("response", result.get("response", "No response from AI."))
             except httpx.TimeoutException:
                 logger.error("Timeout connecting to local API")
                 return "The local MedGemma server is taking too long to respond. Please try again later."
@@ -43,6 +48,46 @@ class APIClient:
                 return response.status_code == 200
             except Exception as e:
                 logger.error(f"Error clearing session: {e}")
+                return False
+
+    async def send_batch(self, telegram_id: int, images_bytes: list[bytes], route: str, text: str | None = None) -> str:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            data = {
+                "telegram_id": telegram_id,
+                "route": route
+            }
+            if text:
+                data["text"] = text
+            
+            files = [
+                ("images", (f"image_{i}.jpg", img_bytes, "image/jpeg"))
+                for i, img_bytes in enumerate(images_bytes)
+            ]
+
+            try:
+                response = await client.post(f"{self.base_url}/chat/batch", data=data, files=files)
+                response.raise_for_status()
+                result = response.json()
+                data_dict = result.get("data", {})
+                return data_dict.get("message", "Batch submitted successfully.")
+            except httpx.TimeoutException:
+                logger.error("Timeout connecting to local API during batch upload")
+                return "Upload timed out. Please try again."
+            except Exception as e:
+                logger.error(f"Error submitting batch: {e}")
+                return "Failed to submit batch for processing."
+
+    async def cancel_batch(self, telegram_id: int) -> bool:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.request(
+                    "DELETE", 
+                    f"{self.base_url}/chat/batch", 
+                    json={"telegram_id": telegram_id}
+                )
+                return response.status_code == 200
+            except Exception as e:
+                logger.error(f"Error canceling batch: {e}")
                 return False
 
 api_client = APIClient()
