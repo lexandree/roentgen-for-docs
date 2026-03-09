@@ -12,19 +12,10 @@ class APISettings(BaseSettings):
     whitelist_file_id: Optional[str] = None
     gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
+    request_timeout: float = 300.0
     
-    # We read the env var as a simple string to avoid parsing issues.
-    inference_worker_urls_str: str = Field("http://127.0.0.1:8001", alias='INFERENCE_WORKER_URLS')
-    
-    # This is the field we'll actually use in the code.
-    inference_worker_urls: List[str] = []
-
-    @model_validator(mode='after')
-    def split_worker_urls(self) -> 'APISettings':
-        """Split the string from the env var into a list of URLs."""
-        if self.inference_worker_urls_str:
-            self.inference_worker_urls = [url.strip() for url in self.inference_worker_urls_str.split(',')]
-        return self
+    # Pydantic will automatically parse a JSON string from the .env file into a list.
+    inference_worker_urls: List[str] = Field(default=[], alias='INFERENCE_WORKER_URLS')
 
     @model_validator(mode='after')
     def load_gdrive_credentials(self) -> 'APISettings':
