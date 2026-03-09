@@ -82,9 +82,11 @@ This is the most critical part. We will create a Conda environment in stages to 
     mkdir -p models
     ```
 
-2.  **Download the model.** Obtain the GGUF-quantized version of the MedGemma 1.5 model and place it inside the `models` directory. The filename should be `medgemma-1.5.gguf`.
+2.  **Download the models.** Since MedGemma 1.5 is a multimodal model (LLaVA architecture), you must download **two** files and place them inside the `models` directory:
+    *   The main quantized model: `medgemma-1.5-4b.gguf` (e.g., Q4_K_M or Q6_K version).
+    *   The vision projector model: `mmproj-model-f16.gguf`.
 
-3.  **Run the Worker.** You can now launch the API worker. It will load the model and offload its layers to your GTX 1060.
+3.  **Run the Worker.** You can now launch the API worker. It will load both the model and the projector, offloading layers to your GTX 1060.
     ```bash
     python -m src.api.worker
     ```
