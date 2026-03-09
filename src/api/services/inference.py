@@ -76,7 +76,7 @@ class MedGemmaModel:
             # Using create_chat_completion for multi-modal input
             response = self.model.create_chat_completion(
                 messages=prompt["messages"],
-                max_tokens=512
+                max_tokens=settings.llama_max_tokens
             )
             
             response_text = response['choices'][0]['message']['content'].strip()

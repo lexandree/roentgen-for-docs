@@ -22,6 +22,8 @@ class APISettings(BaseSettings):
     # n_ctx: 2048 is usually enough for a medical image and a short diagnosis. 
     # Reduce (e.g., 1024 or 512) to save VRAM on smaller GPUs like GTX 1060.
     llama_n_ctx: int = 2048
+    # max_tokens: Maximum number of tokens to generate in a single response.
+    llama_max_tokens: int = 1024
     # Number of CPU threads to use during generation. Optional.
     llama_n_threads: Optional[int] = None
     
