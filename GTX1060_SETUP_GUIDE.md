@@ -69,9 +69,9 @@ This is the most critical part. We will create a Conda environment in stages to 
         ```bash
         pip uninstall llama-cpp-python -y
         ```
-    *   Then, run the compilation command:
+    *   Then, run the compilation command. We explicitly set the CUDA architecture to `61` (which corresponds to the GTX 1060's Pascal architecture) to prevent "no kernel image available" errors.
         ```bash
-        CMAKE_ARGS="-DGGML_CUDA=on" FORCE_CMAKE=1 pip install --no-cache-dir llama-cpp-python
+        CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=61" FORCE_CMAKE=1 pip install --no-cache-dir llama-cpp-python
         ```
         This process will take a significant amount of time (potentially 30-60 minutes) as it compiles the entire C++/CUDA library from scratch, using all available CPU cores. **Do not interrupt it.**
 
