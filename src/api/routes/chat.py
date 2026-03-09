@@ -32,6 +32,11 @@ async def process_message(
     )
 
     try:
+        # If a new image is uploaded, we assume it's a new patient/case
+        # and automatically clear the old session to prevent context overflow.
+        if image:
+            await chat_manager.clear_session(telegram_id, db)
+            
         session_id = await chat_manager.get_or_create_session(telegram_id, db)
         
         # Retrieve history and trim it to the last 6 messages (3 turns) to save context
