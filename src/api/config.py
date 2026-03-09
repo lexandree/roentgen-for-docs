@@ -14,6 +14,17 @@ class APISettings(BaseSettings):
     db_path: str = "sqlite+aiosqlite:///local_data.db"
     request_timeout: float = 300.0
     
+    # Llama.cpp Inference Settings
+    llama_model_filename: str = "medgemma-1.5-4b.gguf"
+    llama_clip_filename: str = "mmproj-model-f16.gguf"
+    # n_gpu_layers: -1 loads all layers to GPU. Reduce this (e.g., 24) if you encounter CUDA Out Of Memory errors.
+    llama_n_gpu_layers: int = -1 
+    # n_ctx: 2048 is usually enough for a medical image and a short diagnosis. 
+    # Reduce (e.g., 1024 or 512) to save VRAM on smaller GPUs like GTX 1060.
+    llama_n_ctx: int = 2048
+    # Number of CPU threads to use during generation. Optional.
+    llama_n_threads: Optional[int] = None
+    
     # Pydantic will automatically parse a JSON string from the .env file into a list.
     inference_worker_urls: List[str] = Field(default=[], alias='INFERENCE_WORKER_URLS')
 
