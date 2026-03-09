@@ -11,6 +11,7 @@
 - Q: What is the maximum number of images allowed in a single batch analysis? → A: 20 images
 - Q: If a user sends a single image, receives the routing menu, but sends another single image before selecting a route for the first, how should the bot handle the second image? → A: Cancel first, process new
 - Q: How should batch images be stored on Google Drive to allow for easy cancellation or isolation? → A: Files must be stored in subdirectories named after the user's `telegram_id` so the entire batch can be cleanly deleted if the user cancels the operation.
+- Q: How do we handle authentication for external workers (RunPod, Colab) since they are exposed to the public internet? → A: The system must support passing Bearer tokens or API keys defined in the environment variables when dispatching requests to external worker URLs.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -73,12 +74,13 @@ As an administrator, I want to log every interaction (user, chosen route, number
 - **FR-001**: System MUST provide an inline keyboard for route selection after receiving a single image.
 - **FR-002**: System MUST support a state machine (FSM) to handle batch uploads via a dedicated command (`/analyze`).
 - **FR-003**: System MUST automatically group media sent as Telegram Albums (`media_group_id`), waiting 5 seconds before finalizing the group and presenting a batch-specific routing menu.
-- **FR-004**: System MUST route requests to different inference endpoints (Local, Colab, RunPod) based on user selection.
+- **FR-004**: System MUST route requests to different inference endpoints (Local, Colab (Hacker/Interactive), Colab (Batch), RunPod) based on user selection.
 - **FR-005**: System MUST log all analysis interactions in a database table, including user ID, route, image count, and timestamps.
 - **FR-006**: System MUST hide or disable the "Local" route option if a batch of images is detected, as it exceeds local VRAM capacity.
 - **FR-007**: System MUST allow text captions to accompany images and forward them to the selected model.
 - **FR-008**: System MUST limit batch image uploads to a maximum of 20 images per session, displaying a clear error if the limit is exceeded.
 - **FR-009**: System MUST store batch images uploaded to Google Drive (for Colab) in isolated subdirectories named after the user's Telegram ID to enable easy cancellation and cleanup.
+- **FR-010**: System MUST support configuring authentication credentials (e.g., API keys, Bearer tokens) for remote workers like RunPod and Colab, appending them securely to outgoing inference requests.
 
 ### Constitution Requirements
 
@@ -90,6 +92,7 @@ As an administrator, I want to log every interaction (user, chosen route, number
 
 - **InteractionLog**: Represents a single session. Attributes: ID, User ID (Telegram), Route (Local/Colab/RunPod), Task Type (Single/Batch), Images Count, Status, Start Time, End Time.
 - **AnalysisSession (FSM State)**: Temporary state holding uploaded images and selected route before dispatching to the backend.
+- **WorkerConfig**: Definition of external workers containing URLs and associated Authentication tokens.
 
 ## Success Criteria *(mandatory)*
 
@@ -99,3 +102,4 @@ As an administrator, I want to log every interaction (user, chosen route, number
 - **SC-002**: Users can successfully route a single image to the local server in 2 clicks or fewer.
 - **SC-003**: Users can successfully queue a batch of images for external processing without the bot crashing or losing images in the sequence.
 - **SC-004**: System correctly groups Telegram Albums into a single batch request 100% of the time, rather than treating them as N separate requests.
+- **SC-005**: External workers receive requests with correctly attached API keys/Bearer tokens, preventing unauthorized public access to inference nodes.
