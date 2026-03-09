@@ -33,34 +33,38 @@ async def process_message(
 
     try:
         session_id = await chat_manager.get_or_create_session(telegram_id, db)
-        response_text = ""
+        
+        # Retrieve history and trim it to the last 6 messages (3 turns) to save context
+        full_history = await chat_manager.get_history(session_id, db)
+        trimmed_history = full_history[-6:] if len(full_history) > 6 else full_history
 
         await chat_manager.update_interaction_log(log_id, "processing", db)
 
+        file_content = None
         if image:
             if image.content_type not in ["image/jpeg", "image/png"]:
                 raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
-
             file_content = await image.read()
-
-            # Dispatch to a worker instead of saving locally
-            response_text = await chat_manager.dispatch_inference_to_worker(
-                image_bytes=file_content,
-                caption=text
-            )
             await chat_manager.set_active_image(session_id, True, db)
 
-        elif text:
-            # For text-only messages, we can eventually add a text-only model worker.
-            # For now, we'll just mock a response.
-            response_text = "This is a mocked response for a text-only query. The dispatcher is working."
+        # Dispatch to worker (now handles both image+text and text-only with history)
+        response_text = await chat_manager.dispatch_inference_to_worker(
+            image_bytes=file_content,
+            caption=text,
+            history=trimmed_history
+        )
 
+        # Save current user message to history
         if text:
             await chat_manager.add_message(session_id, "user", text, db)
+        elif image:
+            await chat_manager.add_message(session_id, "user", "[User uploaded an image]", db)
 
         final_response = f"[{route.upper()}-WORKER] {response_text}"
 
-        await chat_manager.add_message(session_id, "assistant", final_response, db)
+        # Save assistant response to history
+        await chat_manager.add_message(session_id, "assistant", response_text, db)
+        
         await chat_manager.update_interaction_log(log_id, "completed", db)
 
         return {

@@ -14,9 +14,9 @@ http_client = httpx.AsyncClient(timeout=300.0)
 
 class ChatManager:
 
-    async def dispatch_inference_to_worker(self, image_bytes: bytes, caption: str | None) -> str:
+    async def dispatch_inference_to_worker(self, image_bytes: bytes | None, caption: str | None, history: list = None) -> str:
         """
-        Selects a worker, encodes the image, and sends the inference request.
+        Selects a worker, encodes the image (if present), and sends the inference request along with chat history.
         """
         if not settings.inference_worker_urls:
             raise ValueError("No inference worker URLs configured.")
@@ -25,13 +25,14 @@ class ChatManager:
         worker_url = random.choice(settings.inference_worker_urls)
         inference_endpoint = f"{worker_url.rstrip('/')}/infer"
 
-        # Encode image bytes to base64 for safe JSON transport
-        image_bytes_b64 = base64.b64encode(image_bytes).decode('utf-8')
-
         payload = {
-            "image_bytes_b64": image_bytes_b64,
-            "caption": caption
+            "caption": caption,
+            "history": history or []
         }
+
+        # Encode image bytes to base64 for safe JSON transport if present
+        if image_bytes:
+            payload["image_bytes_b64"] = base64.b64encode(image_bytes).decode('utf-8')
 
         try:
             response = await http_client.post(inference_endpoint, json=payload, timeout=settings.request_timeout)

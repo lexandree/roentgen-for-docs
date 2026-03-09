@@ -53,29 +53,41 @@ class MedGemmaModel:
             logger.error(f"!!! FATAL: Failed to load GGUF multimodal model. Error: {e}")
             raise
 
-    async def perform_inference(self, image_bytes: bytes, caption: str | None) -> str:
+    async def perform_inference(self, image_bytes: bytes | None, caption: str | None, history: list = None) -> str:
         if not self.is_ready or not self.model:
             return "Error: Model is not available. Check worker logs."
 
-        try:
-            image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-            
-            # This chat format is supported by Llava15ChatHandler
-            prompt = {
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": [
-                            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                            {"type": "text", "content": caption or "Analyze this medical image in detail."}
-                        ]
-                    }
-                ]
-            }
+        if history is None:
+            history = []
 
-            # Using create_chat_completion for multi-modal input
+        try:
+            # Build the message structure for the model
+            messages = []
+            
+            # Append history first
+            for msg in history:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+
+            # Construct the current prompt
+            current_content = []
+            if image_bytes:
+                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+            
+            if caption:
+                current_content.append({"type": "text", "content": caption})
+            elif not image_bytes:
+                # If there's no image and no caption, just send a default text to avoid empty content
+                current_content.append({"type": "text", "content": "Please continue."})
+                
+            messages.append({
+                "role": "user",
+                "content": current_content
+            })
+
+            # Using create_chat_completion for multi-modal/text input
             response = self.model.create_chat_completion(
-                messages=prompt["messages"],
+                messages=messages,
                 max_tokens=settings.llama_max_tokens
             )
             
