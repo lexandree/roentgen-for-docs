@@ -88,7 +88,8 @@ class MedGemmaModel:
             # Using create_chat_completion for multi-modal/text input
             response = self.model.create_chat_completion(
                 messages=messages,
-                max_tokens=settings.llama_max_tokens
+                max_tokens=settings.llama_max_tokens,
+                stop=["USER:", "User:", "ASSISTANT:", "<end_of_turn>", "<eos>", "user:", "assistant:"]
             )
             
             response_text = response['choices'][0]['message']['content'].strip()
