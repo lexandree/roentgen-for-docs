@@ -38,6 +38,7 @@ class MedGemmaModel:
                 "chat_handler": chat_handler,
                 "n_gpu_layers": settings.llama_n_gpu_layers,
                 "n_ctx": settings.llama_n_ctx, # Context window for dialogue and image
+                "chat_format": "gemma", # Enforce Gemma prompt formatting instead of Llava/Vicuna
                 "verbose": True,
                 "logits_all": True
             }
@@ -89,7 +90,7 @@ class MedGemmaModel:
             response = self.model.create_chat_completion(
                 messages=messages,
                 max_tokens=settings.llama_max_tokens,
-                stop=["USER:", "User:", "ASSISTANT:", "<end_of_turn>", "<eos>", "user:", "assistant:"]
+                stop=["<end_of_turn>", "<eos>"] # Use Gemma specific stop tokens
             )
             
             response_text = response['choices'][0]['message']['content'].strip()
