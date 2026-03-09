@@ -26,8 +26,7 @@ class MedGemmaModel:
         
         report = "This is a mocked diagnostic report from the MedGemma 1.5 Worker."
         if caption:
-            report += f"
-Analysis based on your query: '{caption}'"
+            report += f"\nAnalysis based on your query: '{caption}'"
             
         logger.info("Inference complete.")
         return report

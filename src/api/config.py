@@ -13,17 +13,18 @@ class APISettings(BaseSettings):
     gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
     
-    # List of worker URLs, comma-separated in the .env file
-    inference_worker_urls: List[str] = Field(default=["http://127.0.0.1:8001"])
+    # We read the env var as a simple string to avoid parsing issues.
+    inference_worker_urls_str: str = Field("http://127.0.0.1:8001", alias='INFERENCE_WORKER_URLS')
+    
+    # This is the field we'll actually use in the code.
+    inference_worker_urls: List[str] = []
 
-    @model_validator(mode='before')
-    @classmethod
-    def split_worker_urls(cls, values):
-        """Allow comma-separated string for worker URLs in the env file."""
-        worker_urls = values.get('inference_worker_urls')
-        if worker_urls and isinstance(worker_urls, str):
-            values['inference_worker_urls'] = [url.strip() for url in worker_urls.split(',')]
-        return values
+    @model_validator(mode='after')
+    def split_worker_urls(self) -> 'APISettings':
+        """Split the string from the env var into a list of URLs."""
+        if self.inference_worker_urls_str:
+            self.inference_worker_urls = [url.strip() for url in self.inference_worker_urls_str.split(',')]
+        return self
 
     @model_validator(mode='after')
     def load_gdrive_credentials(self) -> 'APISettings':
