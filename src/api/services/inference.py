@@ -75,10 +75,10 @@ class MedGemmaModel:
                 current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
             
             if caption:
-                current_content.append({"type": "text", "content": caption})
+                current_content.append({"type": "text", "text": caption})
             elif not image_bytes:
                 # If there's no image and no caption, just send a default text to avoid empty content
-                current_content.append({"type": "text", "content": "Please continue."})
+                current_content.append({"type": "text", "text": "Please continue."})
                 
             messages.append({
                 "role": "user",
