@@ -26,7 +26,7 @@ async def get_dynamic_keyboard():
     except Exception as e:
         # Fallback in case the API is unreachable
         builder = InlineKeyboardBuilder()
-        builder.button(text="⚡️ Локально (Fallback)", callback_data="route_local_python")
+        builder.button(text="⚡️ Local (Fallback)", callback_data="route_local_python")
         builder.adjust(1)
         return builder.as_markup()
 
@@ -44,7 +44,7 @@ async def process_album_after_delay(chat_id: int, user_id: int, state: FSMContex
     
     await bot.send_message(
         chat_id=chat_id,
-        text=f"Получено {len(images)} снимков (Серия). Выберите маршрут обработки:",
+        text=f"Received {len(images)} images (Batch). Please select a processing route:",
         reply_markup=keyboard
     )
     
@@ -62,7 +62,7 @@ async def handle_compressed_photo(message: types.Message):
         return
     
     await message.answer(
-        "Пожалуйста, отправляйте изображения как 'Файл', а не 'Фото', чтобы избежать сжатия Telegram."
+        "Please send images as 'File' rather than 'Photo' to avoid Telegram compression."
     )
 
 @router.message(F.document)
@@ -89,9 +89,9 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
         keyboard = await get_dynamic_keyboard()
         
         await message.answer(
-            "Снимок (без сжатия) получен. Выберите маршрут анализа:",
+            "Image received (uncompressed). Please select an analysis route:",
             reply_markup=keyboard
         )
     else:
-        await message.answer("Формат документа не поддерживается. Пожалуйста, отправьте изображение (JPEG/PNG) как 'Файл'.")
+        await message.answer("Document format not supported. Please send an image (JPEG/PNG) as a 'File'.")
 
