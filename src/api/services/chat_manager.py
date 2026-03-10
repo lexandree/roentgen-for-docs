@@ -18,24 +18,52 @@ class ChatManager:
     async def dispatch_inference_to_worker(self, messages: list) -> str:
         """
         Selects a worker and sends the full OpenAI-style messages array.
+        Supports both custom python worker (/infer) and OpenAI-compatible endpoints (/v1/chat/completions).
         """
         if not settings.inference_worker_urls:
             raise ValueError("No inference worker URLs configured.")
 
         # Simple load balancing: pick a random worker
         worker_url = random.choice(settings.inference_worker_urls)
-        inference_endpoint = f"{worker_url.rstrip('/')}/infer"
-
-        payload = {
-            "messages": messages
+        
+        # System prompt to reduce verbosity
+        system_prompt = {
+            "role": "system",
+            "content": "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
         }
+        
+        # Prepend system prompt
+        final_messages = [system_prompt] + messages
+
+        # Determine worker type based on URL
+        if worker_url.endswith("/v1/chat/completions"):
+            # OpenAI compatible (like llama-server)
+            inference_endpoint = worker_url
+            payload = {
+                "messages": final_messages,
+                "temperature": 0.0, # Deterministic medical answers
+                "max_tokens": settings.llama_max_tokens
+            }
+        else:
+            # Our custom Python worker (/infer)
+            inference_endpoint = f"{worker_url.rstrip('/')}/infer"
+            payload = {
+                "messages": final_messages
+            }
 
         try:
             response = await http_client.post(inference_endpoint, json=payload, timeout=settings.request_timeout)
             response.raise_for_status()  # Raise an exception for bad status codes (4xx or 5xx)
             
             response_data = response.json()
-            return response_data.get("report", "Worker did not return a valid report.")
+            
+            # Extract response based on API format
+            if "choices" in response_data:
+                # OpenAI format
+                return response_data["choices"][0]["message"]["content"].strip()
+            else:
+                # Custom worker format
+                return response_data.get("report", "Worker did not return a valid report.")
 
         except httpx.HTTPStatusError as e:
             # The worker returned an error response (e.g., 500)
