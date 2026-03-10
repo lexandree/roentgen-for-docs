@@ -1,3 +1,9 @@
+## Topic: Dynamic System Prompts (Future Enhancement)
+- **Idea**: Implement multiple configurable system prompts tailored to different user roles or analytical goals.
+  - *For Doctors*: Highly technical, concise, peer-to-peer communication format. Suggests specific diagnostic questions or follow-up imaging requirements.
+  - *For Patients*: Accessible language, empathetic tone, explains findings simply, and explicitly lists questions the patient should ask their primary care physician.
+- **Rationale**: Enhances the utility of the bot by acting as both a professional second opinion for clinicians and an educational tool for patients (if opened to the public later).
+- **Status**: Logged for future implementation. Will require adding a user role or preference selection in the database and injecting the corresponding prompt in `chat_manager.py`.
 # Research: Multi Model Dispatcher
 
 **Feature Branch**: `002-multi-model-dispatcher`  
