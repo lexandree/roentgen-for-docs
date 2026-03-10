@@ -85,12 +85,8 @@ class MedGemmaModel:
             raise FileNotFoundError(error_msg)
 
         try:
-            # The internet suggestion uses a class attribute CHAT_FORMAT. 
-            # In llama-cpp-python, chat formatting is often handled by jinja2 templates passed to chat_format.
-            # We will use the chat_handler, but we must override the chat_format template.
-            
-            # Initialize the multimodal vision handler
-            chat_handler = Llava15ChatHandler(clip_model_path=clip_model_path)
+            # Initialize the multimodal vision handler with our CUSTOM class
+            chat_handler = CustomGemma3ChatHandler(clip_model_path=clip_model_path)
             
             # The magic Gemma template from your file
             gemma_template = (
