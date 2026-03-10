@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Form, Depends, HTTPException, File, UploadFile
 from typing import Annotated, List
 import aiosqlite
+import json
+import base64
 from src.api.db.database import get_db
 from src.api.services.auth import auth_service
 from src.api.services.chat_manager import chat_manager
@@ -38,38 +40,54 @@ async def process_message(
             await chat_manager.clear_session(telegram_id, db)
             
         session_id = await chat_manager.get_or_create_session(telegram_id, db)
-        
-        # Retrieve history and trim it to the last 6 messages (3 turns) to save context
-        full_history = await chat_manager.get_history(session_id, db)
-        trimmed_history = full_history[-6:] if len(full_history) > 6 else full_history
-
         await chat_manager.update_interaction_log(log_id, "processing", db)
 
-        file_content = None
+        # 1. Build current user message content
+        current_content = []
         if image:
             if image.content_type not in ["image/jpeg", "image/png"]:
                 raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
             file_content = await image.read()
+            image_b64 = base64.b64encode(file_content).decode('utf-8')
+            current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
             await chat_manager.set_active_image(session_id, True, db)
-
-        # Dispatch to worker (now handles both image+text and text-only with history)
-        response_text = await chat_manager.dispatch_inference_to_worker(
-            image_bytes=file_content,
-            caption=text,
-            history=trimmed_history
-        )
-
-        # Save current user message to history
-        if text:
-            await chat_manager.add_message(session_id, "user", text, db)
-        elif image:
-            await chat_manager.add_message(session_id, "user", "[User uploaded an image]", db)
-
-        final_response = f"[{route.upper()}-WORKER] {response_text}"
-
-        # Save assistant response to history
-        await chat_manager.add_message(session_id, "assistant", response_text, db)
         
+        if text:
+            current_content.append({"type": "text", "text": text})
+        elif not image:
+            current_content.append({"type": "text", "text": "Please continue."})
+
+        # Save current user message to DB as JSON string
+        await chat_manager.add_message(session_id, "user", json.dumps(current_content), db)
+
+        # 2. Retrieve history and construct messages array
+        full_history = await chat_manager.get_history(session_id, db)
+        
+        # Trim history to save context, BUT always keep the first message (which contains the image)
+        # to ensure the multimodal projector always sees the image and KV cache works.
+        if len(full_history) > 6:
+            trimmed_history = [full_history[0]] + full_history[-5:]
+        else:
+            trimmed_history = full_history
+
+        messages = []
+        for msg in trimmed_history:
+            try:
+                # We store complex structures as JSON in DB now
+                parsed_content = json.loads(msg["content"])
+            except json.JSONDecodeError:
+                # Fallback for older text-only DB entries
+                parsed_content = [{"type": "text", "text": msg["content"]}]
+            messages.append({"role": msg["role"], "content": parsed_content})
+
+        # 3. Dispatch full messages array to worker
+        response_text = await chat_manager.dispatch_inference_to_worker(messages)
+
+        # 4. Save assistant response to history
+        assistant_content = [{"type": "text", "text": response_text}]
+        await chat_manager.add_message(session_id, "assistant", json.dumps(assistant_content), db)
+        
+        final_response = f"[{route.upper()}-WORKER] {response_text}"
         await chat_manager.update_interaction_log(log_id, "completed", db)
 
         return {

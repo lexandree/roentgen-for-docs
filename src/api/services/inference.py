@@ -38,7 +38,8 @@ class MedGemmaModel:
                 "chat_handler": chat_handler,
                 "n_gpu_layers": settings.llama_n_gpu_layers,
                 "n_ctx": settings.llama_n_ctx, # Context window for dialogue and image
-                "chat_format": "gemma", # Enforce Gemma prompt formatting instead of Llava/Vicuna
+                # DO NOT force chat_format="gemma" here, as Llava15ChatHandler uses Vicuna format internally.
+                # Forcing gemma causes tensor shape broadcast errors during generation.
                 "verbose": True,
                 "logits_all": True
             }
@@ -54,43 +55,20 @@ class MedGemmaModel:
             logger.error(f"!!! FATAL: Failed to load GGUF multimodal model. Error: {e}")
             raise
 
-    async def perform_inference(self, image_bytes: bytes | None, caption: str | None, history: list = None) -> str:
+    async def perform_inference(self, messages: list) -> str:
+        """
+        Accepts a standard OpenAI-like messages array.
+        """
         if not self.is_ready or not self.model:
             return "Error: Model is not available. Check worker logs."
 
-        if history is None:
-            history = []
-
         try:
-            # Build the message structure for the model
-            messages = []
-            
-            # Append history first
-            for msg in history:
-                messages.append({"role": msg["role"], "content": msg["content"]})
-
-            # Construct the current prompt
-            current_content = []
-            if image_bytes:
-                image_b64 = base64.b64encode(image_bytes).decode('utf-8')
-                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
-            
-            if caption:
-                current_content.append({"type": "text", "text": caption})
-            elif not image_bytes:
-                # If there's no image and no caption, just send a default text to avoid empty content
-                current_content.append({"type": "text", "text": "Please continue."})
-                
-            messages.append({
-                "role": "user",
-                "content": current_content
-            })
-
             # Using create_chat_completion for multi-modal/text input
             response = self.model.create_chat_completion(
                 messages=messages,
                 max_tokens=settings.llama_max_tokens,
-                stop=["<end_of_turn>", "<eos>"] # Use Gemma specific stop tokens
+                # Use Vicuna/Llava stop words to prevent hallucinating user turns
+                stop=["USER:", "User:", "ASSISTANT:", "<end_of_turn>", "<eos>", "user:", "assistant:"] 
             )
             
             response_text = response['choices'][0]['message']['content'].strip()
