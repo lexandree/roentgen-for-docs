@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import model_validator, Field
 import json
 import os
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 class APISettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding='utf-8')
@@ -27,8 +27,17 @@ class APISettings(BaseSettings):
     # Number of CPU threads to use during generation. Optional.
     llama_n_threads: Optional[int] = None
     
-    # Pydantic will automatically parse a JSON string from the .env file into a list.
-    inference_worker_urls: List[str] = Field(default=[], alias='INFERENCE_WORKER_URLS')
+    # Pydantic will automatically parse a JSON string from the .env file.
+    # Format: {"route_id": {"name": "Button Label", "url": "http://.../infer"}}
+    inference_workers: Dict[str, Dict[str, str]] = Field(
+        default={
+            "local_python": {
+                "name": "⚡️ Локально (Python)",
+                "url": "http://127.0.0.1:8001/infer"
+            }
+        }, 
+        alias='INFERENCE_WORKERS'
+    )
 
     @model_validator(mode='after')
     def load_gdrive_credentials(self) -> 'APISettings':

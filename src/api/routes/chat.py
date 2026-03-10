@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Form, Depends, HTTPException, File, UploadFile
-from typing import Annotated, List
+from typing import Annotated, List, Dict
 import aiosqlite
 import json
 import base64
@@ -11,12 +11,22 @@ from src.shared.services.gdrive_storage import GDriveStorageService
 
 router = APIRouter(prefix="/api/v1/chat")
 
+@router.get("/routes")
+async def get_routes():
+    """
+    Returns available inference routes configured in the environment.
+    Used by the Telegram Bot to dynamically generate the selection menu.
+    """
+    # Expose only the route_id and human-readable name, NOT the internal URLs
+    routes = [{"id": r_id, "name": r_data.get("name", r_id)} for r_id, r_data in settings.inference_workers.items()]
+    return {"status": "success", "data": {"routes": routes}}
+
 @router.post("/message")
 async def process_message(
     telegram_id: Annotated[int, Form()],
     text: Annotated[str | None, Form()] = None,
     image: Annotated[UploadFile | None, File()] = None,
-    route: Annotated[str | None, Form()] = "local",
+    route: Annotated[str | None, Form()] = "local_python",
     db: aiosqlite.Connection = Depends(get_db)
 ):
     if not await auth_service.is_user_whitelisted(telegram_id, db):
@@ -24,6 +34,9 @@ async def process_message(
 
     if not text and not image:
         raise HTTPException(status_code=400, detail="Must provide text or image.")
+        
+    if route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail=f"Invalid route: {route}")
 
     log_id = await chat_manager.create_interaction_log(
         telegram_id=telegram_id,
@@ -81,7 +94,7 @@ async def process_message(
             messages.append({"role": msg["role"], "content": parsed_content})
 
         # 3. Dispatch full messages array to worker
-        response_text = await chat_manager.dispatch_inference_to_worker(messages)
+        response_text = await chat_manager.dispatch_inference_to_worker(messages, route)
 
         # 4. Save assistant response to history
         assistant_content = [{"type": "text", "text": response_text}]
@@ -129,8 +142,8 @@ async def process_batch(
     if len(images) > 20:
         raise HTTPException(status_code=400, detail="Maximum 20 images allowed per batch.")
 
-    if route == "local":
-        raise HTTPException(status_code=400, detail="Local route does not support batch processing.")
+    if route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail=f"Invalid route: {route}")
 
     log_id = await chat_manager.create_interaction_log(
         telegram_id=telegram_id,

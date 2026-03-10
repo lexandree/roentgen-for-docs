@@ -9,7 +9,19 @@ class APIClient:
         self.base_url = settings.local_api_url
         self.timeout = settings.request_timeout
 
-    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str = "local") -> str:
+    async def get_routes(self) -> dict:
+        """Fetches the available inference routes from the Dispatcher API."""
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/chat/routes")
+                response.raise_for_status()
+                return response.json().get("data", {"routes": []})
+            except Exception as e:
+                logger.error(f"Failed to fetch routes from API: {e}")
+                # Return empty list so the fallback keyboard kicks in
+                return {"routes": []}
+
+    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str = "local_python") -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             data = {
                 "telegram_id": telegram_id,

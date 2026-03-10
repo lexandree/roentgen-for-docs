@@ -11,20 +11,24 @@ router = Router()
 
 album_tasks: Dict[int, asyncio.Task] = {}
 
-def get_single_image_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="⚡️ Локально (GTX 1060)", callback_data="route_local")
-    builder.button(text="📦 В очередь (Colab)", callback_data="route_colab")
-    builder.button(text="🧠 Глубоко (RunPod)", callback_data="route_runpod")
-    builder.adjust(1)
-    return builder.as_markup()
-
-def get_batch_keyboard():
-    builder = InlineKeyboardBuilder()
-    builder.button(text="📦 Пакетный анализ (Colab)", callback_data="route_colab")
-    builder.button(text="🧠 Глубокий анализ (RunPod)", callback_data="route_runpod")
-    builder.adjust(1)
-    return builder.as_markup()
+async def get_dynamic_keyboard():
+    """Fetches available routes from the API and builds a keyboard."""
+    try:
+        routes_data = await api_client.get_routes()
+        routes = routes_data.get("routes", [])
+        
+        builder = InlineKeyboardBuilder()
+        for route in routes:
+            builder.button(text=route["name"], callback_data=f"route_{route['id']}")
+            
+        builder.adjust(1)
+        return builder.as_markup()
+    except Exception as e:
+        # Fallback in case the API is unreachable
+        builder = InlineKeyboardBuilder()
+        builder.button(text="⚡️ Локально (Fallback)", callback_data="route_local_python")
+        builder.adjust(1)
+        return builder.as_markup()
 
 async def process_album_after_delay(chat_id: int, user_id: int, state: FSMContext, bot: Bot):
     await asyncio.sleep(5.0)
@@ -36,10 +40,12 @@ async def process_album_after_delay(chat_id: int, user_id: int, state: FSMContex
     # Transition to waiting for route, but with batch data
     await state.set_state(AnalysisSession.waiting_for_route)
     
+    keyboard = await get_dynamic_keyboard()
+    
     await bot.send_message(
         chat_id=chat_id,
         text=f"Получено {len(images)} снимков (Серия). Выберите маршрут обработки:",
-        reply_markup=get_batch_keyboard()
+        reply_markup=keyboard
     )
     
     # Cleanup task reference
@@ -79,9 +85,12 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             caption=message.caption or ""
         )
         await state.set_state(AnalysisSession.waiting_for_route)
+        
+        keyboard = await get_dynamic_keyboard()
+        
         await message.answer(
             "Снимок (без сжатия) получен. Выберите маршрут анализа:",
-            reply_markup=get_single_image_keyboard()
+            reply_markup=keyboard
         )
     else:
         await message.answer("Формат документа не поддерживается. Пожалуйста, отправьте изображение (JPEG/PNG) как 'Файл'.")
