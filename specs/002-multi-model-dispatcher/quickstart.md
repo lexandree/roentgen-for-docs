@@ -28,13 +28,13 @@ No new environment variables are strictly required, as the Google Drive credenti
 
 1. **Single Image**:
    - Drag and drop a single X-ray into the chat.
-   - The bot will reply with an inline keyboard: `[ ⚡️ Локально (GTX 1060) ]` or `[ 📦 В очередь (Colab) ]`.
+   - The bot will reply with a dynamically generated inline keyboard based on available workers (e.g., `[ ⚡️ Local (Python) ]` or `[ ⚡️ C++ Server ]`).
    - Click the desired route to begin analysis.
 
 2. **Batch / Series (MRI)**:
    - Drag and drop multiple images at once (as a Telegram Album).
    - Wait 5 seconds.
-   - The bot will group them and offer a batch-specific menu: `[ 📦 Пакетный анализ (Colab) ]`.
+   - The bot will group them and offer a batch-specific menu.
    - Alternatively, type `/analyze` to manually start a batch upload session.
 
 3. **Cancellation**:

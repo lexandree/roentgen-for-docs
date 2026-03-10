@@ -3,7 +3,7 @@
 **Feature Branch**: `002-multi-model-dispatcher`  
 **Created**: 2026-03-08
 **Status**: Draft  
-**Input**: User description: "002-multi-model-dispatcher согласно обсужденному" (Implementing FSM and Routing for Local 1060, Colab, and RunPod with Interaction Logs).
+**Input**: User description: "002-multi-model-dispatcher as discussed" (Implementing FSM and Routing for Local 1060, Colab, and RunPod with Interaction Logs).
 
 ## Clarifications
 ### Session 2026-03-08
@@ -25,8 +25,8 @@ As a doctor, I want to quickly analyze a single medical image (e.g., X-ray) usin
 
 **Acceptance Scenarios**:
 
-1. **Given** the bot is waiting for input, **When** the user sends a single photo with or without text, **Then** the bot replies with an inline keyboard to choose the routing destination (e.g., Local GTX 1060, Colab).
-2. **Given** the routing menu is displayed, **When** the user selects the local route, **Then** the bot updates its status to "Processing", sends the data to the local server, and returns the response.
+1. **Given** the bot is waiting for input, **When** the user sends a single photo with or without text, **Then** the bot replies with an inline keyboard to choose the routing destination (dynamically populated from API).
+2. **Given** the routing menu is displayed, **When** the user selects a local route, **Then** the bot updates its status to "Processing", sends the data to the local server, and returns the response.
 
 ---
 
@@ -40,7 +40,7 @@ As a doctor, I want to upload a series of images (e.g., MRI slices) or an album 
 
 **Acceptance Scenarios**:
 
-1. **Given** the bot is waiting for input, **When** the user sends an album of images (Media Group), **Then** the bot groups them and presents a routing menu specifically for batch processing (excluding the low-VRAM local option).
+1. **Given** the bot is waiting for input, **When** the user sends an album of images (Media Group), **Then** the bot groups them and presents a routing menu specifically for batch processing.
 2. **Given** the user uses the `/analyze` command, **When** they select a heavy-duty route (e.g., Colab), **Then** the bot enters a state waiting for image uploads.
 3. **Given** the bot is in the image upload state, **When** the user uploads multiple images and clicks "Finish", **Then** the entire batch is queued for processing on the selected route.
 4. **Given** the bot is in the image upload state, **When** the user attempts to upload more than 20 images, **Then** the bot rejects the excess images and warns the user about the limit.
