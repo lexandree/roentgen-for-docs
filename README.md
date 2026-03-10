@@ -104,9 +104,45 @@ This machine runs the Telegram bot and forwards requests to your local server. A
     python -m src.bot.main
     ```
 
+## Docker Deployment (Recommended for Cloud)
+
+For a streamlined setup on your cloud server (e.g., Oracle Cloud), you can use Docker and Docker Compose. This packages both the Dispatcher API and the Telegram Bot into isolated containers.
+
+### Prerequisites
+- Docker and Docker Compose installed on the host.
+- A `.env` file and `gdrive_credentials.json` in the project root.
+
+### Steps
+1.  **Prepare Configuration**: Ensure your `.env` file contains all necessary tokens and the `WHITELIST_FILE_ID`.
+2.  **Start Services**:
+    ```bash
+    docker-compose up -d --build
+    ```
+3.  **Logs**: Monitor output using `docker-compose logs -f`.
+
+## Worker Infrastructure
+
+The system supports multiple worker types for model inference.
+
+### 1. Local Python Worker
+Runs on your local machine with a GPU. Use this for real-time single-image analysis.
+```bash
+python -m src.api.worker
+```
+The Dispatcher API will route requests here if configured in `INFERENCE_WORKERS`.
+
+### 2. Cloud Batch Worker (Colab/Kaggle)
+Designed for ephemeral cloud GPUs. It polls Google Drive for batches of images, processes them, and uploads JSON reports.
+1.  Upload the project code and models to your notebook.
+2.  Set environment variables `GOOGLE_DRIVE_CREDENTIALS_JSON` and `GDRIVE_BATCH_FOLDER_ID`.
+3.  Run the adapter:
+    ```bash
+    python src/workers/cloud_adapter.py
+    ```
+
 ## Usage
 
-Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted, the bot will respond, and you can begin sending text queries or uncompressed images for analysis.
+Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted in the Google Drive JSON config, the bot will respond. Use `/analyze` to start a batch upload session for remote cloud workers.
 
 ## Troubleshooting
 
