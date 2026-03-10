@@ -10,10 +10,10 @@ class GDriveWhitelistService:
         self.credentials_json = credentials_json
         self.file_id = file_id
 
-    def get_whitelist(self) -> list[int]:
+    def get_whitelist_data(self) -> dict:
         if not self.credentials_json or not self.file_id:
-            logger.warning("Google Drive credentials or file_id not configured. Returning empty whitelist.")
-            return []
+            logger.warning("Google Drive credentials or file_id not configured. Returning empty data.")
+            return {"users": {}, "prompts": {}}
             
         try:
             creds_dict = json.loads(self.credentials_json)
@@ -26,16 +26,31 @@ class GDriveWhitelistService:
             file_content = request.execute()
             
             content_str = file_content.decode('utf-8')
-            whitelist = []
-            for line in content_str.splitlines():
-                line = line.strip()
-                if not line:
-                    continue
-                # Take the first part of the line, splitting by whitespace, to allow for comments
-                user_id_str = line.split()[0]
+            parsed_data = json.loads(content_str)
+            
+            # Handle legacy format where root is just users, or new format with users and prompts
+            if "users" in parsed_data:
+                users_data = parsed_data.get("users", {})
+                prompts_data = parsed_data.get("prompts", {})
+            else:
+                users_data = parsed_data
+                prompts_data = {}
+            
+            whitelist = {}
+            for user_id_str, config in users_data.items():
                 if user_id_str.isdigit():
-                    whitelist.append(int(user_id_str))
-            return whitelist
+                    whitelist[int(user_id_str)] = config
+                    
+            prompts = {}
+            for prompt_id_str, config in prompts_data.items():
+                if prompt_id_str.isdigit():
+                    prompts[int(prompt_id_str)] = config
+                    
+            return {"users": whitelist, "prompts": prompts}
         except Exception as e:
             logger.error(f"Failed to fetch whitelist from Google Drive: {e}")
-            return []
+            return {"users": {}, "prompts": {}}
+
+    def get_whitelist(self) -> dict[int, dict]:
+        # Legacy compat
+        return self.get_whitelist_data().get("users", {})

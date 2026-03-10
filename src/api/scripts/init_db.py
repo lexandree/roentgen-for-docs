@@ -9,21 +9,22 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../.
 
 from src.api.db.database import init_db, settings
 
-async def add_user(telegram_id: int, name: str | None = None):
+async def add_user(telegram_id: int, name: str | None = None, role: str = "user"):
     db_path = settings.db_path.replace("sqlite+aiosqlite:///", "")
     async with aiosqlite.connect(db_path) as db:
         await db.execute(
-            "INSERT INTO users (telegram_id, name, is_active) VALUES (?, ?, 1) ON CONFLICT(telegram_id) DO UPDATE SET is_active=1",
-            (telegram_id, name)
+            "INSERT INTO users (telegram_id, name, is_active, role) VALUES (?, ?, 1, ?) ON CONFLICT(telegram_id) DO UPDATE SET is_active=1, role=excluded.role",
+            (telegram_id, name, role)
         )
         await db.commit()
-    print(f"User {telegram_id} ({name or 'N/A'}) added to whitelist.")
+    print(f"User {telegram_id} ({name or 'N/A'}) added to whitelist with role '{role}'.")
 
 async def main():
     parser = argparse.ArgumentParser(description="Initialize MedGemma local DB.")
     parser.add_argument("--init", action="store_true", help="Initialize tables")
     parser.add_argument("--add-user", type=int, help="Telegram ID to whitelist")
     parser.add_argument("--name", type=str, help="Name for the user")
+    parser.add_argument("--role", type=str, default="user", help="Role for the user (e.g., admin, user)")
     
     args = parser.parse_args()
     
@@ -41,7 +42,7 @@ async def main():
             print("Database tables initialized.")
         
     if args.add_user:
-        await add_user(args.add_user, args.name)
+        await add_user(args.add_user, args.name, args.role)
     
     if not args.init and not args.add_user:
         parser.print_help()

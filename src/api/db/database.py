@@ -18,9 +18,38 @@ async def init_db():
                 telegram_id INTEGER PRIMARY KEY,
                 name TEXT,
                 is_active BOOLEAN DEFAULT 1,
+                system_prompt_type INTEGER DEFAULT 1,
+                role TEXT DEFAULT 'user',
+                allowed_workers TEXT DEFAULT '[]',
+                daily_limit INTEGER DEFAULT 10,
+                specialty TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS system_prompts (
+                id INTEGER PRIMARY KEY,
+                description TEXT,
+                content TEXT NOT NULL
+            )
+        """)
+
+        # Migrations for existing tables
+        columns_to_add = [
+            ("system_prompt_type", "INTEGER DEFAULT 1"),
+            ("role", "TEXT DEFAULT 'user'"),
+            ("allowed_workers", "TEXT DEFAULT '[]'"),
+            ("daily_limit", "INTEGER DEFAULT 10"),
+            ("specialty", "TEXT")
+        ]
+        for col_name, col_type in columns_to_add:
+            try:
+                await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
+            except aiosqlite.OperationalError as e:
+                # Ignore if column already exists
+                if "duplicate column name" not in str(e).lower():
+                    raise e
         await db.execute("""
             CREATE TABLE IF NOT EXISTS session_contexts (
                 session_id TEXT PRIMARY KEY,

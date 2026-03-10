@@ -44,7 +44,11 @@ async def cmd_clear(message: types.Message, state: FSMContext):
 
 @router.message(Command("refresh_whitelist"))
 async def cmd_refresh_whitelist(message: types.Message):
-    # In a real scenario, you might restrict this to admins
+    user = auth_service.get_user(message.from_user.id)
+    if not user or user.get("role") != "admin":
+        await message.answer("You are not authorized to use this command.")
+        return
+        
     auth_service.sync_whitelist()
     await message.answer("Whitelist has been refreshed from Google Drive.")
 

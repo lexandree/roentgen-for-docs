@@ -6,7 +6,17 @@ class User(BaseModel):
     telegram_id: int
     name: str | None = None
     is_active: bool = True
+    system_prompt_type: int = 1
+    role: str = "user"
+    allowed_workers: list[str] = []
+    daily_limit: int = 10
+    specialty: str | None = None
     created_at: datetime
+
+class SystemPrompt(BaseModel):
+    id: int
+    description: str | None = None
+    content: str
 
 class SessionContext(BaseModel):
     session_id: str

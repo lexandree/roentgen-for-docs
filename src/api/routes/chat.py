@@ -29,8 +29,13 @@ async def process_message(
     route: Annotated[str | None, Form()] = "local_python",
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    if not await auth_service.is_user_whitelisted(telegram_id, db):
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
         raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
 
     if not text and not image:
         raise HTTPException(status_code=400, detail="Must provide text or image.")
@@ -93,8 +98,12 @@ async def process_message(
                 parsed_content = [{"type": "text", "text": msg["content"]}]
             messages.append({"role": msg["role"], "content": parsed_content})
 
+        # Get system prompt configured for user
+        system_prompt_type = user_config.get("system_prompt_type", 1)
+        system_prompt_text = await auth_service.get_system_prompt(system_prompt_type, db)
+
         # 3. Dispatch full messages array to worker
-        response_text = await chat_manager.dispatch_inference_to_worker(messages, route)
+        response_text = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text)
 
         # 4. Save assistant response to history
         assistant_content = [{"type": "text", "text": response_text}]
@@ -133,8 +142,13 @@ async def process_batch(
     images: List[UploadFile] = File(...),
     db: aiosqlite.Connection = Depends(get_db)
 ):
-    if not await auth_service.is_user_whitelisted(telegram_id, db):
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
         raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
 
     if not images:
         raise HTTPException(status_code=400, detail="Must provide images for batch processing.")

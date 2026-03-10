@@ -10,18 +10,24 @@ class BotAuthService:
             credentials_json=settings.google_drive_credentials_json,
             file_id=settings.whitelist_file_id
         )
-        self.cached_whitelist: set[int] = set()
+        self.cached_whitelist: dict[int, dict] = {}
 
     def sync_whitelist(self):
         logger.info("Bot syncing whitelist from Google Drive...")
         whitelist = self.gdrive_service.get_whitelist()
         if whitelist:
-            self.cached_whitelist = set(whitelist)
+            self.cached_whitelist = whitelist
             logger.info(f"Bot successfully cached {len(self.cached_whitelist)} users.")
         else:
             logger.warning("Bot whitelist fetch returned empty.")
 
     def is_user_whitelisted(self, telegram_id: int) -> bool:
-        return telegram_id in self.cached_whitelist
+        user_config = self.cached_whitelist.get(telegram_id)
+        if user_config and user_config.get("is_active", True):
+            return True
+        return False
+
+    def get_user(self, telegram_id: int) -> dict | None:
+        return self.cached_whitelist.get(telegram_id)
 
 auth_service = BotAuthService()

@@ -15,7 +15,7 @@ http_client = httpx.AsyncClient(timeout=300.0)
 
 class ChatManager:
 
-    async def dispatch_inference_to_worker(self, messages: list) -> str:
+    async def dispatch_inference_to_worker(self, messages: list, system_prompt_text: str | None = None) -> str:
         """
         Selects a worker and sends the full OpenAI-style messages array.
         Supports both custom python worker (/infer) and OpenAI-compatible endpoints (/v1/chat/completions).
@@ -26,10 +26,13 @@ class ChatManager:
         # Simple load balancing: pick a random worker
         worker_url = random.choice(settings.inference_worker_urls)
         
+        if not system_prompt_text:
+            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
+
         # System prompt to reduce verbosity
         system_prompt = {
             "role": "system",
-            "content": "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
+            "content": system_prompt_text
         }
         
         # Prepend system prompt
