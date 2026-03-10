@@ -2,69 +2,13 @@
 import logging
 import base64
 from llama_cpp import Llama
-from llama_cpp.llama_chat_format import Llava15ChatHandler, format_chatml
+from llama_cpp.llama_chat_format import Llava15ChatHandler
 from PIL import Image
 import io
 import os
 from src.api.config import settings
 
 logger = logging.getLogger(__name__)
-
-class CustomGemma3ChatHandler(Llava15ChatHandler):
-    """Custom handler to inject Gemma-style prompt formatting into the Llava multimodal pipeline."""
-    
-    # Override the __init__ to register our custom chat format
-    def __init__(self, clip_model_path: str, verbose: bool = False):
-        super().__init__(clip_model_path=clip_model_path, verbose=verbose)
-        
-        # We override the __call__ method or the format implicitly 
-        # by defining how the prompt is built if the library allows it.
-        # However, the most robust way in llama-cpp-python is to register a new format or override the template.
-        # Llava15ChatHandler intercepts the `messages` before formatting.
-        
-    def __call__(self, *args, **kwargs):
-        # We need to manually build the prompt string here because Llava15ChatHandler
-        # hardcodes the "USER: ... ASSISTANT:" Vicuna format in its __call__ method.
-        messages = kwargs.get("messages") or args[0]
-        
-        system_prompt = ""
-        prompt = ""
-        
-        for message in messages:
-            role = message["role"]
-            content = message["content"]
-            
-            if role == "system":
-                system_prompt = content
-                continue
-                
-            prompt += f"<start_of_turn>{role}\n"
-            
-            if isinstance(content, str):
-                prompt += content
-            elif isinstance(content, list):
-                for part in content:
-                    if part["type"] == "text":
-                        prompt += part["text"]
-                    elif part["type"] == "image_url":
-                        prompt += "<image>\n"
-            
-            prompt += "<end_of_turn>\n"
-            
-        prompt += "<start_of_turn>model\n"
-        
-        # Replace <image> with the special <__media__> token that Llava15ChatHandler expects
-        prompt = prompt.replace("<image>", "<__media__>")
-        
-        # Now we call the parent's generation logic, but we trick it.
-        # Llava15ChatHandler doesn't easily accept a pre-formatted string in create_chat_completion.
-        # But we can override its internal _chat_format logic if needed, or simply pass the formatted string.
-        # Actually, the easiest hack is to use the parent's processing but rewrite the prompt.
-        
-        # Let's use the provided jinja template logic if the library supports chat_template injection.
-        # Since we are overriding __call__, we can just use the parent's logic but modify how it constructs the string.
-        
-        return super().__call__(*args, **kwargs)
 
 # --- Model Singleton ---
 class MedGemmaModel:
@@ -76,7 +20,7 @@ class MedGemmaModel:
         model_path = os.path.join(models_dir, settings.llama_model_filename)
         clip_model_path = os.path.join(models_dir, settings.llama_clip_filename)
         
-        logger.info(f"--- MedGemmaModel Initializing with Llama.cpp and CustomGemma3ChatHandler ---")
+        logger.info(f"--- MedGemmaModel Initializing with Llama.cpp and Llava15ChatHandler ---")
         
         if not os.path.exists(model_path) or not os.path.exists(clip_model_path):
             error_msg = f"Model files not found. Expected {model_path} and {clip_model_path}"
@@ -85,35 +29,14 @@ class MedGemmaModel:
             raise FileNotFoundError(error_msg)
 
         try:
-            # Initialize the multimodal vision handler with our CUSTOM class
-            chat_handler = CustomGemma3ChatHandler(clip_model_path=clip_model_path)
-            
-            # The magic Gemma template from your file
-            gemma_template = (
-                "{% for message in messages %}"
-                "{% if message['role'] == 'user' %}"
-                "<start_of_turn>user\n"
-                "{% if message['content'] is string %}"
-                "{{ message['content'] }}"
-                "{% else %}"
-                "{% for part in message['content'] %}"
-                "{% if part['type'] == 'text' %}{{ part['text'] }}{% endif %}"
-                "{% if part.get('type') == 'image_url' %}<__media__>\n{% endif %}"
-                "{% endfor %}"
-                "{% endif %}"
-                "<end_of_turn>\n"
-                "{% elif message['role'] == 'assistant' %}"
-                "<start_of_turn>model\n"
-                "{{ message.get('content', '') }}"
-                "<end_of_turn>\n"
-                "{% endif %}"
-                "{% endfor %}"
-                "{% if add_generation_prompt %}<start_of_turn>model\n{% endif %}"
-            )
+            # We must use the base Llava15ChatHandler to prevent internal state corruption,
+            # BUT we will bypass its chat formatting by using the low-level model() call
+            # or by sending exactly ONE user message to prevent the broadcast error on multi-turn.
+            self.chat_handler = Llava15ChatHandler(clip_model_path=clip_model_path)
 
             kwargs = {
                 "model_path": model_path,
-                "chat_handler": chat_handler,
+                "chat_handler": self.chat_handler,
                 "n_gpu_layers": settings.llama_n_gpu_layers,
                 "n_ctx": settings.llama_n_ctx,
                 "verbose": True,
@@ -123,12 +46,6 @@ class MedGemmaModel:
                 kwargs["n_threads"] = settings.llama_n_threads
 
             self.model = Llama(**kwargs)
-            
-            # Inject the custom Jinja template into the model's metadata
-            # This forces the create_chat_completion to use our Gemma format instead of Vicuna
-            if hasattr(self.model, 'metadata'):
-                self.model.metadata['tokenizer.chat_template'] = gemma_template
-            
             self.is_ready = True
             logger.info(f"--- Model and Vision Projector loaded successfully and offloaded to GPU ---")
 
@@ -141,13 +58,75 @@ class MedGemmaModel:
             return "Error: Model is not available. Check worker logs."
 
         try:
+            # HACK FOR MEDGEMMA + LLAVA15:
+            # Llava15ChatHandler crashes on multi-turn history with images due to tensor shape mismatches.
+            # It also hardcodes the Vicuna prompt format.
+            # To fix this, we will squash the ENTIRE history into a SINGLE "user" message.
+            # This forces the handler to process it as one prompt, avoiding the broadcast error,
+            # and allows us to inject Gemma's native formatting manually within that single message.
+            
+            squashed_prompt = ""
+            image_b64 = None
+            
+            # 1. Extract the image if it exists anywhere in the history
+            for msg in messages:
+                if isinstance(msg["content"], list):
+                    for part in msg["content"]:
+                        if part["type"] == "image_url":
+                            # Extract base64 data (strip prefix "data:image/jpeg;base64,")
+                            url_data = part["image_url"]["url"]
+                            if "," in url_data:
+                                image_b64 = url_data.split(",")[1]
+
+            # 2. Build the Gemma-formatted prompt manually
+            for i, msg in enumerate(messages):
+                role = msg["role"]
+                squashed_prompt += f"<start_of_turn>{role}\n"
+                
+                content = msg["content"]
+                if isinstance(content, str):
+                    squashed_prompt += content
+                elif isinstance(content, list):
+                    for part in content:
+                        if part["type"] == "text":
+                            squashed_prompt += part["text"]
+                
+                squashed_prompt += "<end_of_turn>\n"
+            
+            # The final prompt for the model to answer
+            squashed_prompt += "<start_of_turn>model\n"
+            
+            # 3. Create the SINGLE message for Llava15ChatHandler
+            final_content = []
+            if image_b64:
+                # We put the image first
+                final_content.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}
+                })
+            
+            # Then we put our manually squashed Gemma prompt
+            final_content.append({
+                "type": "text",
+                "text": squashed_prompt
+            })
+            
+            single_message = [{"role": "user", "content": final_content}]
+
+            # 4. Run inference using the standard API, but with our squashed single message
             response = self.model.create_chat_completion(
-                messages=messages,
+                messages=single_message,
                 max_tokens=settings.llama_max_tokens,
-                stop=["<end_of_turn>", "<eos>"] 
+                stop=["<end_of_turn>", "<eos>", "USER:", "ASSISTANT:"] 
             )
             
             response_text = response['choices'][0]['message']['content'].strip()
+            
+            # The handler might echo back parts of our prompt due to the Vicuna wrapper.
+            # Clean up any bleeding tags just in case.
+            for tag in ["ASSISTANT:", "<start_of_turn>model\n"]:
+                if response_text.startswith(tag):
+                    response_text = response_text[len(tag):].strip()
             
             logger.info("Inference complete.")
             return response_text
