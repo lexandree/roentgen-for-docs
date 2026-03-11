@@ -1,6 +1,6 @@
 # Feature Specification: Convert whitelist to JSON user configs
 
-**Feature Branch**: `003-003-user-config`  
+**Feature Branch**: `003-user-config`  
 **Created**: 2026-03-10  
 **Status**: Draft  
 
