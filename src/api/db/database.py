@@ -35,21 +35,21 @@ async def init_db():
             )
         """)
 
-        # Migrations for existing tables
-        columns_to_add = [
+        # Migrations for users table
+        columns_to_add_users = [
             ("system_prompt_type", "INTEGER DEFAULT 1"),
             ("role", "TEXT DEFAULT 'user'"),
             ("allowed_workers", "TEXT DEFAULT '[]'"),
             ("daily_limit", "INTEGER DEFAULT 10"),
             ("specialty", "TEXT")
         ]
-        for col_name, col_type in columns_to_add:
+        for col_name, col_type in columns_to_add_users:
             try:
                 await db.execute(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}")
             except aiosqlite.OperationalError as e:
-                # Ignore if column already exists
                 if "duplicate column name" not in str(e).lower():
                     raise e
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS session_contexts (
                 session_id TEXT PRIMARY KEY,
@@ -77,9 +77,26 @@ async def init_db():
                 task_type TEXT NOT NULL,
                 images_count INTEGER NOT NULL,
                 status TEXT NOT NULL,
+                latency REAL,
+                input_tokens INTEGER,
+                output_tokens INTEGER,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 completed_at TIMESTAMP,
                 FOREIGN KEY(telegram_id) REFERENCES users(telegram_id)
             )
         """)
+
+        # Migrations for interaction_logs table
+        columns_to_add_logs = [
+            ("latency", "REAL"),
+            ("input_tokens", "INTEGER"),
+            ("output_tokens", "INTEGER")
+        ]
+        for col_name, col_type in columns_to_add_logs:
+            try:
+                await db.execute(f"ALTER TABLE interaction_logs ADD COLUMN {col_name} {col_type}")
+            except aiosqlite.OperationalError as e:
+                if "duplicate column name" not in str(e).lower():
+                    raise e
+
         await db.commit()

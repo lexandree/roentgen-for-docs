@@ -103,20 +103,37 @@ async def process_message(
         system_prompt_text = await auth_service.get_system_prompt(system_prompt_type, db)
 
         # 3. Dispatch full messages array to worker
-        response_text = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text)
+        # The worker now returns a structure that might include telemetry
+        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text)
+        
+        # Handle both legacy string response and new dict response with telemetry
+        if isinstance(worker_response, dict):
+            response_text = worker_response.get("report", "Error")
+            telemetry = worker_response.get("telemetry", {})
+        else:
+            response_text = worker_response
+            telemetry = {}
 
         # 4. Save assistant response to history
         assistant_content = [{"type": "text", "text": response_text}]
         await chat_manager.add_message(session_id, "assistant", json.dumps(assistant_content), db)
         
         final_response = f"[{route.upper()}-WORKER] {response_text}"
-        await chat_manager.update_interaction_log(log_id, "completed", db)
+        
+        # Update log with telemetry
+        await chat_manager.update_interaction_log(
+            log_id, "completed", db,
+            latency=telemetry.get("latency"),
+            input_tokens=telemetry.get("input_tokens"),
+            output_tokens=telemetry.get("output_tokens")
+        )
 
         return {
             "status": "success", 
             "data": {
                 "response": final_response,
-                "log_id": log_id
+                "log_id": log_id,
+                "telemetry": telemetry
             }
         }
     except Exception as e:

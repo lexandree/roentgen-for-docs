@@ -13,6 +13,7 @@ class APISettings(BaseSettings):
     gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
     request_timeout: float = 300.0
+    session_timeout_seconds: int = 3600  # Default 1 hour
     
     # Llama.cpp Inference Settings
     llama_model_filename: str = "medgemma-1.5-4b.gguf"

@@ -83,12 +83,12 @@ class ChatManager:
         
         now = datetime.now(timezone.utc)
         if row:
-            # Check 24 hour expiry
+            # Check parameterized expiry
             last_activity = row["last_activity"]
             if isinstance(last_activity, str):
                 last_activity = datetime.fromisoformat(last_activity)
             
-            if (now - last_activity).total_seconds() > 24 * 3600:
+            if (now - last_activity).total_seconds() > settings.session_timeout_seconds:
                 await self.clear_session(telegram_id, db)
             else:
                 await db.execute("UPDATE session_contexts SET last_activity = ? WHERE session_id = ?", (now, row["session_id"]))
@@ -138,11 +138,11 @@ class ChatManager:
         await db.commit()
         return cursor.lastrowid
 
-    async def update_interaction_log(self, log_id: int, status: str, db):
+    async def update_interaction_log(self, log_id: int, status: str, db, latency: float = None, input_tokens: int = None, output_tokens: int = None):
         if status in ['completed', 'failed']:
             await db.execute(
-                "UPDATE interaction_logs SET status = ?, completed_at = CURRENT_TIMESTAMP WHERE id = ?",
-                (status, log_id)
+                "UPDATE interaction_logs SET status = ?, completed_at = CURRENT_TIMESTAMP, latency = ?, input_tokens = ?, output_tokens = ? WHERE id = ?",
+                (status, latency, input_tokens, output_tokens, log_id)
             )
         else:
             await db.execute(

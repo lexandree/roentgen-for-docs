@@ -6,6 +6,7 @@ from llama_cpp.llama_chat_format import Llava15ChatHandler
 from PIL import Image
 import io
 import os
+import time
 from src.api.config import settings
 
 logger = logging.getLogger(__name__)
@@ -53,10 +54,11 @@ class MedGemmaModel:
             logger.error(f"!!! FATAL: Failed to load GGUF multimodal model. Error: {e}")
             raise
 
-    async def perform_inference(self, messages: list) -> str:
+    async def perform_inference(self, messages: list) -> dict:
         if not self.is_ready or not self.model:
-            return "Error: Model is not available. Check worker logs."
+            return {"report": "Error: Model is not available. Check worker logs.", "telemetry": {}}
 
+        start_time = time.time()
         try:
             # HACK FOR MEDGEMMA + LLAVA15:
             # Llava15ChatHandler crashes on multi-turn history with images due to tensor shape mismatches.
@@ -128,12 +130,23 @@ class MedGemmaModel:
                 if response_text.startswith(tag):
                     response_text = response_text[len(tag):].strip()
             
-            logger.info("Inference complete.")
-            return response_text
+            latency = time.time() - start_time
+            usage = response.get("usage", {})
+            
+            logger.info(f"Inference complete. Latency: {latency:.2f}s")
+            
+            return {
+                "report": response_text,
+                "telemetry": {
+                    "latency": latency,
+                    "input_tokens": usage.get("prompt_tokens"),
+                    "output_tokens": usage.get("completion_tokens")
+                }
+            }
 
         except Exception as e:
             logger.error(f"!!! INFERENCE FAILED: {e}")
-            return f"An error occurred during inference: {e}"
+            return {"report": f"An error occurred during inference: {e}", "telemetry": {"latency": time.time() - start_time}}
 
 # --- Singleton instance ---
 model_instance = None

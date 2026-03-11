@@ -38,6 +38,9 @@ class InteractionLog(BaseModel):
     task_type: str
     images_count: int
     status: str
+    latency: Optional[float] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
     created_at: datetime = datetime.now()
     completed_at: Optional[datetime] = None
 

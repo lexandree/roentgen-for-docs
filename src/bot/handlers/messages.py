@@ -42,6 +42,19 @@ async def cmd_clear(message: types.Message, state: FSMContext):
     else:
         await message.answer("Cleared local state, but encountered an issue clearing remote server state.")
 
+@router.message(Command("end"))
+async def cmd_end(message: types.Message, state: FSMContext):
+    """
+    Explicitly end the conversation session.
+    Same logic as /clear but with a more 'user-friendly' semantic meaning for doctors.
+    """
+    if not auth_service.is_user_whitelisted(message.from_user.id):
+        return
+        
+    await state.clear()
+    await api_client.clear_session(message.from_user.id)
+    await message.answer("Сессия завершена. История очищена. Вы можете начать новый разбор.")
+
 @router.message(Command("refresh_whitelist"))
 async def cmd_refresh_whitelist(message: types.Message):
     user = auth_service.get_user(message.from_user.id)

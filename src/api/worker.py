@@ -16,6 +16,7 @@ class InferenceRequest(BaseModel):
 
 class InferenceResponse(BaseModel):
     report: str
+    telemetry: Optional[Dict[str, Any]] = None
 
 @app.post("/infer", response_model=InferenceResponse)
 async def run_inference(
@@ -27,8 +28,11 @@ async def run_inference(
     """
     try:
         # Call the actual inference function
-        diagnostic_report = await model.perform_inference(messages=request.messages)
-        return InferenceResponse(report=diagnostic_report)
+        result = await model.perform_inference(messages=request.messages)
+        return InferenceResponse(
+            report=result.get("report", "Error"),
+            telemetry=result.get("telemetry")
+        )
     except Exception as e:
         # It's crucial to log the full error here for debugging on the worker
         print(f"!!! INFERENCE WORKER ERROR: {e}")
