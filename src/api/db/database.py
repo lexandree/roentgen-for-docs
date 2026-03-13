@@ -23,6 +23,7 @@ async def init_db():
                 allowed_workers TEXT DEFAULT '[]',
                 daily_limit INTEGER DEFAULT 10,
                 specialty TEXT,
+                show_thoughts BOOLEAN DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
@@ -41,7 +42,8 @@ async def init_db():
             ("role", "TEXT DEFAULT 'user'"),
             ("allowed_workers", "TEXT DEFAULT '[]'"),
             ("daily_limit", "INTEGER DEFAULT 10"),
-            ("specialty", "TEXT")
+            ("specialty", "TEXT"),
+            ("show_thoughts", "BOOLEAN DEFAULT 0")
         ]
         for col_name, col_type in columns_to_add_users:
             try:

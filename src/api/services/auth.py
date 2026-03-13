@@ -34,11 +34,12 @@ class APIAuthService:
                 daily_limit = config.get("daily_limit", 10)
                 specialty = config.get("specialty")
                 is_active = 1 if config.get("is_active", True) else 0
+                show_thoughts = 1 if config.get("show_thoughts", False) else 0
 
                 # Insert or update to active
                 await db.execute("""
-                    INSERT INTO users (telegram_id, name, is_active, system_prompt_type, role, allowed_workers, daily_limit, specialty) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO users (telegram_id, name, is_active, system_prompt_type, role, allowed_workers, daily_limit, specialty, show_thoughts) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     ON CONFLICT(telegram_id) DO UPDATE SET 
                         name = excluded.name,
                         is_active = excluded.is_active,
@@ -46,8 +47,9 @@ class APIAuthService:
                         role = excluded.role,
                         allowed_workers = excluded.allowed_workers,
                         daily_limit = excluded.daily_limit,
-                        specialty = excluded.specialty
-                """, (tid, name, is_active, system_prompt_type, role, allowed_workers, daily_limit, specialty))
+                        specialty = excluded.specialty,
+                        show_thoughts = excluded.show_thoughts
+                """, (tid, name, is_active, system_prompt_type, role, allowed_workers, daily_limit, specialty, show_thoughts))
                 
             # Sync system prompts
             if prompts:

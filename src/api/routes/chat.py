@@ -117,9 +117,11 @@ async def process_message(
         # Handle both legacy string response and new dict response with telemetry        
         if isinstance(worker_response, dict):
             response_text = worker_response.get("report", "Error")
+            thought_text = worker_response.get("thought", "")
             telemetry = worker_response.get("telemetry", {})
         else:
             response_text = worker_response
+            thought_text = ""
             telemetry = {}
 
         # 4. Save assistant response to history
@@ -127,6 +129,8 @@ async def process_message(
         await chat_manager.add_message(session_id, "assistant", json.dumps(assistant_content), db)
         
         final_response = f"[{route.upper()}-WORKER] {response_text}"
+        if thought_text and user_config.get("show_thoughts"):
+            final_response = f"🤔 Мысли:\n{thought_text}\n\n{final_response}"
         
         # Update log with telemetry
         await chat_manager.update_interaction_log(
@@ -140,6 +144,7 @@ async def process_message(
             "status": "success", 
             "data": {
                 "response": final_response,
+                "thought": thought_text,
                 "log_id": log_id,
                 "telemetry": telemetry
             }
