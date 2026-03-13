@@ -58,7 +58,7 @@ class APIClient:
             except httpx.HTTPStatusError as e:
                 if e.response.status_code == 401:
                     return "You are not authorized to use this bot."
-                logger.error(f"HTTP error from local API: {e}")
+                logger.error(f"HTTP error from local API {e.response.status_code}: {e.response.text}")
                 return "An error occurred while communicating with the diagnostic server."
             except Exception as e:
                 logger.error(f"Unexpected error connecting to local API: {e}")
