@@ -41,15 +41,24 @@ async def process_message(
     if not user_config or not user_config.get("is_active"):
         raise HTTPException(status_code=401, detail="User not in whitelist.")
 
-    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
-    if allowed_workers and route not in allowed_workers:
-        raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
-
     if not text and not image:
         raise HTTPException(status_code=400, detail="Must provide text or image.")
-        
+
     if route not in settings.inference_workers:
-        raise HTTPException(status_code=400, detail=f"Invalid route: {route}")
+        if settings.inference_workers:
+            # Fallback to the first available worker if an invalid or legacy route is provided
+            route = next(iter(settings.inference_workers.keys()))
+        else:
+            raise HTTPException(status_code=400, detail=f"No inference workers configured.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        # If the fallback route is still not allowed, try finding the first allowed one
+        valid_allowed = [w for w in allowed_workers if w in settings.inference_workers]
+        if valid_allowed:
+            route = valid_allowed[0]
+        else:
+            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
 
     log_id = await chat_manager.create_interaction_log(
         telegram_id=telegram_id,
@@ -176,10 +185,6 @@ async def process_batch(
     if not user_config or not user_config.get("is_active"):
         raise HTTPException(status_code=401, detail="User not in whitelist.")
 
-    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
-    if allowed_workers and route not in allowed_workers:
-        raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
-
     if not images:
         raise HTTPException(status_code=400, detail="Must provide images for batch processing.")
 
@@ -187,7 +192,20 @@ async def process_batch(
         raise HTTPException(status_code=400, detail="Maximum 20 images allowed per batch.")
 
     if route not in settings.inference_workers:
-        raise HTTPException(status_code=400, detail=f"Invalid route: {route}")
+        if settings.inference_workers:
+            # Fallback to the first available worker if an invalid or legacy route is provided
+            route = next(iter(settings.inference_workers.keys()))
+        else:
+            raise HTTPException(status_code=400, detail=f"No inference workers configured.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        # If the fallback route is still not allowed, try finding the first allowed one
+        valid_allowed = [w for w in allowed_workers if w in settings.inference_workers]
+        if valid_allowed:
+            route = valid_allowed[0]
+        else:
+            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
 
     log_id = await chat_manager.create_interaction_log(
         telegram_id=telegram_id,
