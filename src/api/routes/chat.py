@@ -104,9 +104,9 @@ async def process_message(
 
         # 3. Dispatch full messages array to worker
         # The worker now returns a structure that might include telemetry
-        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text)
-        
-        # Handle both legacy string response and new dict response with telemetry
+        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, route)
+
+        # Handle both legacy string response and new dict response with telemetry        
         if isinstance(worker_response, dict):
             response_text = worker_response.get("report", "Error")
             telemetry = worker_response.get("telemetry", {})

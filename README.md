@@ -53,7 +53,7 @@ This machine runs the MedGemma model and handles all AI processing.
 
 5.  **Configure Credentials**:
     - Create a file named `gdrive_credentials.json` in the project root and paste your Google Drive Service Account JSON key into it.
-    - Create a `.env` file in the project root. You can copy `src/api/.env.example` and fill in the values for `GOOGLE_DRIVE_CREDENTIALS_FILE_PATH` and `WHITELIST_FILE_ID`.
+    - Create a `.env` file in the project root. You can copy `src/api/dispatcher.env.example` and fill in the values for `GOOGLE_DRIVE_CREDENTIALS_FILE_PATH` and `WHITELIST_FILE_ID`.
 
 6.  **Initialize Database**:
     Run the script to set up the local database and add your Telegram user ID to the whitelist:
@@ -120,6 +120,23 @@ For a streamlined setup on your cloud server (e.g., Oracle Cloud), you can use D
     ```
 3.  **Logs**: Monitor output using `docker-compose logs -f`.
 
+## Minimalist Deployment (systemd - Alternative for < 1GB RAM)
+
+If you are running on a very limited VM (like Oracle Cloud `Micro` instance with 1GB RAM), it is recommended to use `systemd` to avoid Docker's memory overhead. We strongly recommend using **Ubuntu** instead of Oracle Linux to avoid SELinux and strict user directory permission issues.
+
+See the detailed guide and service files in [deployment/systemd/](deployment/systemd/).
+
+### Summary of Steps
+1.  **Setup Virtualenv**: Create a `venv` and install requirements. *Note: Use `src/api/requirements-dispatcher.txt` for the API to avoid compiling heavy ML libraries on the cloud server.*
+2.  **Configure Environment**: Create `api.env` and `bot.env` in the root folder with absolute paths to your credentials.
+3.  **Install Services**:
+    ```bash
+    sudo cp deployment/systemd/*.service /etc/systemd/system/
+    sudo systemctl daemon-reload
+    sudo systemctl enable roentgen-api roentgen-bot
+    sudo systemctl start roentgen-api roentgen-bot
+    ```
+
 ## Worker Infrastructure
 
 The system supports multiple worker types for model inference.
@@ -127,11 +144,18 @@ The system supports multiple worker types for model inference.
 ### 1. Local Python Worker
 Runs on your local machine with a GPU. Use this for real-time single-image analysis.
 ```bash
-python -m src.api.worker
+uvicorn src.api.worker:app --host 127.0.0.1 --port 8001
 ```
-The Dispatcher API will route requests here if configured in `INFERENCE_WORKERS`.
+The Dispatcher API will route requests here if configured in `INFERENCE_WORKERS` (e.g., `http://127.0.0.1:8080/infer` via SSH tunnel).
 
-### 2. Cloud Batch Worker (Colab/Kaggle)
+### 2. Native C++ Worker (llama-server)
+For maximum efficiency and lowest VRAM usage, bypass the Python worker and use the pre-compiled `llama-server`. The Dispatcher automatically detects OpenAI-compatible endpoints.
+```bash
+./llama-server -m models/medgemma-1.5-4b.gguf --mmproj models/mmproj-model-f16.gguf -c 2048 --port 8001 --host 127.0.0.1
+```
+Configure `api.env` to point to the completions endpoint: `http://127.0.0.1:8080/v1/chat/completions`.
+
+### 3. Cloud Batch Worker (Colab/Kaggle)
 Designed for ephemeral cloud GPUs. It polls Google Drive for batches of images, processes them, and uploads JSON reports.
 1.  Upload the project code and models to your notebook.
 2.  Set environment variables `GOOGLE_DRIVE_CREDENTIALS_JSON` and `GDRIVE_BATCH_FOLDER_ID`.
@@ -146,40 +170,29 @@ Open Telegram and send the `/start` command to your bot. If your user ID is corr
 
 ## Troubleshooting
 
+### Deployment: Oracle Linux vs Ubuntu
+If deploying on Oracle Cloud Free Tier, **always choose the Ubuntu image**. Oracle Linux comes with aggressive SELinux policies that block `systemd` from executing scripts inside user directories (`/home/opc/`), leading to `203/EXEC` and `Permission denied` errors.
+
+### Whitelist: "Failed to fetch whitelist"
+The Google Drive whitelist must be a strictly valid JSON object. Do not add trailing characters or comments.
+```json
+{
+  "users": {
+    "YOUR_TELEGRAM_ID_HERE": {
+      "name": "Admin",
+      "role": "admin",
+      "is_active": true
+    }
+  }
+}
+```
+
 ### Reverse SSH Tunnel: `Connection refused`
+When creating the reverse SSH tunnel from your Local Server, you might encounter a `ssh: connect to host <your-cloud-server-ip> port 22: Connection refused` error. Ensure your cloud firewall (e.g., `ufw`) allows SSH traffic on port 22.
 
-When creating the reverse SSH tunnel from your Local Server, you might encounter a `ssh: connect to host <your-cloud-server-ip> port 22: Connection refused` error. This almost always means a firewall on the **Cloud Server** is blocking the connection.
-
-Follow these steps on the **Cloud Server** to resolve it:
-
-1.  **Check the Firewall Status**:
-    The most common firewall on Ubuntu/Debian is `ufw`. Check its status:
-    ```bash
-    sudo ufw status
-    ```
-    If the status is `active`, it is likely blocking the SSH port.
-
-2.  **Allow SSH Connections**:
-    If the firewall is active, add a rule to allow incoming SSH traffic:
-    ```bash
-    sudo ufw allow ssh
-    ```
-    Or by port number:
-    ```bash
-    sudo ufw allow 22
-    ```
-    You should see a `Rule added` confirmation. Now, try creating the SSH tunnel again from your Local Server.
-
-3.  **Check the SSH Service**:
-    On modern Linux systems, the SSH service might not run constantly. It's activated by a socket. If you've opened the firewall and still have issues, ensure the SSH service is running on the **Cloud Server**:
-    ```bash
-    sudo systemctl start ssh
-    ```
-    Then check its status to ensure it's `active (running)`:
-    ```bash
-    sudo systemctl status ssh
-    ```
-    If this solves the problem, you can enable it permanently, so it starts on boot:
-    ```bash
-    sudo systemctl enable ssh
-    ```
+### Reverse SSH Tunnel: `Warning: remote port forwarding failed for listen port 8080`
+This happens when an old, disconnected SSH session is still holding port 8080 open on your cloud server.
+1. On the cloud server, find the zombie process: `sudo ss -tulpn | grep 8080`
+2. Kill the process: `sudo kill -9 <PID>`
+3. Always launch your tunnel with a keep-alive flag to prevent silent timeouts:
+   `ssh -i /path/to/key.key -R 8080:127.0.0.1:8001 ubuntu@<cloud-ip> -N -o ServerAliveInterval=60`

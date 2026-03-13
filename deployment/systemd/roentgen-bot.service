@@ -1,0 +1,18 @@
+[Unit]
+Description=Roentgen Telegram Bot Service
+After=network.target roentgen-api.service
+
+[Service]
+# CHANGE 'ubuntu' to your VM username
+User=ubuntu
+Group=www-data
+# CHANGE to your project root path
+WorkingDirectory=/home/ubuntu/roentgen_for_docs
+# Assumes a virtualenv named 'venv' in the project root
+ExecStart=/home/ubuntu/roentgen_for_docs/venv/bin/python -m src.bot.main
+Restart=always
+# Configuration should be in bot.env in the root
+EnvironmentFile=/home/ubuntu/roentgen_for_docs/bot.env
+
+[Install]
+WantedBy=multi-user.target
