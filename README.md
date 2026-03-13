@@ -170,24 +170,61 @@ Designed for ephemeral cloud GPUs. It polls Google Drive for batches of images, 
 
 Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted in the Google Drive JSON config, the bot will respond. Use `/analyze` to start a batch upload session for remote cloud workers.
 
-## Troubleshooting
+## Whitelist Configuration
 
-### Deployment: Oracle Linux vs Ubuntu
-If deploying on Oracle Cloud Free Tier, **always choose the Ubuntu image**. Oracle Linux comes with aggressive SELinux policies that block `systemd` from executing scripts inside user directories (`/home/opc/`), leading to `203/EXEC` and `Permission denied` errors.
+The Google Drive JSON file acts as the central source of truth for access control and user preferences. It must be a strictly valid JSON object.
 
-### Whitelist: "Failed to fetch whitelist"
-The Google Drive whitelist must be a strictly valid JSON object. Do not add trailing characters or comments.
+Here is an exemplary, fully-documented whitelist:
+
 ```json
 {
   "users": {
-    "YOUR_TELEGRAM_ID_HERE": {
-      "name": "Admin",
+    "123456789": {
+      "name": "Dr. House",
       "role": "admin",
-      "is_active": true
+      "is_active": true,
+      "system_prompt_type": 1,
+      "allowed_workers": ["local_python", "cloud_batch"],
+      "daily_limit": 50,
+      "specialty": "Radiology",
+      "show_thoughts": true
+    },
+    "987654321": {
+      "name": "Dr. Watson",
+      "role": "user",
+      "is_active": true,
+      "system_prompt_type": 2,
+      "allowed_workers": ["local_python"],
+      "show_thoughts": false
+    }
+  },
+  "prompts": {
+    "1": {
+      "description": "Standard Radiologist",
+      "content": "You are an expert radiologist AI assistant. Be highly concise, factual, and direct."
+    },
+    "2": {
+      "description": "Pediatric Radiologist",
+      "content": "You are an expert pediatric radiologist. Tailor your language for pediatric cases."
     }
   }
 }
 ```
+
+### User Parameters
+- `name` *(string)*: Display name for the user.
+- `role` *(string)*: User role (`"admin"` or `"user"`). Admins can use the `/refresh_whitelist` command.
+- `is_active` *(boolean)*: Set to `false` to instantly revoke bot access for the user.
+- `system_prompt_type` *(integer)*: Links the user to a specific system prompt defined in the `"prompts"` section. Defaults to `1`.
+- `allowed_workers` *(list of strings)*: Restricts which inference routes the user can access (e.g., `["local_python"]`). If empty or omitted, all configured routes are allowed.
+- `daily_limit` *(integer)*: (Future use) Maximum number of requests allowed per day.
+- `specialty` *(string)*: (Future use) Medical specialty of the user for analytics.
+- `show_thoughts` *(boolean)*: If `true`, the bot will display the AI's internal reasoning (e.g., `<think>` tags or JSON thought blocks) before the final answer. Defaults to `false`.
+
+## Troubleshooting
+
+### Deployment: Oracle Linux vs Ubuntu
+If deploying on Oracle Cloud Free Tier, **always choose the Ubuntu image**. Oracle Linux comes with aggressive SELinux policies that block `systemd` from executing scripts inside user directories (`/home/opc/`), leading to `203/EXEC` and `Permission denied` errors.
 
 ### Reverse SSH Tunnel: `Connection refused`
 When creating the reverse SSH tunnel from your Local Server, you might encounter a `ssh: connect to host <your-cloud-server-ip> port 22: Connection refused` error. Ensure your cloud firewall (e.g., `ufw`) allows SSH traffic on port 22.
