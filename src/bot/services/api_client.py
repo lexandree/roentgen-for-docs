@@ -21,6 +21,17 @@ class APIClient:
                 # Return empty list so the fallback keyboard kicks in
                 return {"routes": []}
 
+    async def get_workers_status(self) -> dict:
+        """Fetches the health status of configured workers."""
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/chat/workers/status")
+                response.raise_for_status()
+                return response.json().get("data", {}).get("workers", {})
+            except Exception as e:
+                logger.error(f"Failed to fetch workers status: {e}")
+                return {}
+
     async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str = "local_python") -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             data = {

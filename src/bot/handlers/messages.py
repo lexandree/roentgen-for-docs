@@ -15,6 +15,37 @@ async def cmd_start(message: types.Message):
         return
     await message.answer("Welcome to MedGemma Diagnostic Bot. You can send me a text query or upload an X-ray/MRI image for analysis.")
 
+@router.message(Command("status"))
+async def cmd_status(message: types.Message):
+    if not auth_service.is_user_whitelisted(message.from_user.id):
+        return
+    
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    statuses = await api_client.get_workers_status()
+    
+    if not statuses:
+        await message.answer("⚠️ Не удалось получить статусы серверов. Возможно, Диспетчер недоступен.")
+        return
+        
+    response_lines = ["*Статус вычислительных серверов:*"]
+    for route_id, info in statuses.items():
+        name = info.get("name", route_id)
+        status = info.get("status", "unknown")
+        
+        if status == "online":
+            icon = "🟢"
+            status_text = "Доступен"
+        elif "timeout" in status:
+            icon = "🟡"
+            status_text = "Спящий режим (ожидание)"
+        else:
+            icon = "🔴"
+            status_text = f"Недоступен ({status})"
+            
+        response_lines.append(f"{icon} *{name}*: {status_text}")
+        
+    await message.answer("\n".join(response_lines), parse_mode="Markdown")
+
 @router.message(Command("analyze"))
 async def cmd_analyze(message: types.Message, state: FSMContext):
     if not auth_service.is_user_whitelisted(message.from_user.id):

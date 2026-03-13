@@ -21,6 +21,14 @@ async def get_routes():
     routes = [{"id": r_id, "name": r_data.get("name", r_id)} for r_id, r_data in settings.inference_workers.items()]
     return {"status": "success", "data": {"routes": routes}}
 
+@router.get("/workers/status")
+async def get_workers_status():
+    """
+    Actively pings configured inference workers to check their health.
+    """
+    statuses = await chat_manager.check_workers_health()
+    return {"status": "success", "data": {"workers": statuses}}
+
 @router.post("/message")
 async def process_message(
     telegram_id: Annotated[int, Form()],

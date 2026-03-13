@@ -175,4 +175,34 @@ class ChatManager:
             )
         await db.commit()
 
+    async def check_workers_health(self) -> dict:
+        from urllib.parse import urlparse
+        statuses = {}
+        for route_id, config in settings.inference_workers.items():
+            url = config.get("url")
+            name = config.get("name", route_id)
+            
+            if not url:
+                statuses[route_id] = {"name": name, "status": "offline", "reason": "No URL"}
+                continue
+                
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}"
+            
+            try:
+                # 3-second timeout: enough to check if a TCP connection can be established
+                response = await http_client.get(base_url, timeout=3.0)
+                # Any HTTP response (even 404/405) means the server is reachable
+                statuses[route_id] = {"name": name, "status": "online"}
+            except httpx.TimeoutException:
+                # RunPod or Colab might be asleep and taking time to wake up
+                statuses[route_id] = {"name": name, "status": "timeout (waking up?)"}
+            except httpx.RequestError:
+                # Connection refused usually means the worker or tunnel is down
+                statuses[route_id] = {"name": name, "status": "offline"}
+            except Exception as e:
+                statuses[route_id] = {"name": name, "status": "error"}
+                
+        return statuses
+
 chat_manager = ChatManager()
