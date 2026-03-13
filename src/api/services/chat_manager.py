@@ -196,7 +196,7 @@ class ChatManager:
                 statuses[route_id] = {
                     "name": name, 
                     "status": "serverless", 
-                    "reason": "Просыпается только при запросе"
+                    "reason": "Wakes up on request only"
                 }
                 continue
                 

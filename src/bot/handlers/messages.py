@@ -24,26 +24,26 @@ async def cmd_status(message: types.Message):
     statuses = await api_client.get_workers_status()
     
     if not statuses:
-        await message.answer("⚠️ Не удалось получить статусы серверов. Возможно, Диспетчер недоступен.")
+        await message.answer("⚠️ Failed to retrieve server statuses. Dispatcher might be offline.")
         return
         
-    response_lines = ["*Статус вычислительных серверов:*"]
+    response_lines = ["*Inference Servers Status:*"]
     for route_id, info in statuses.items():
         name = info.get("name", route_id)
         status = info.get("status", "unknown")
         
         if status == "online":
             icon = "🟢"
-            status_text = "Доступен"
+            status_text = "Online"
         elif status == "serverless":
             icon = "☁️"
-            status_text = f"Serverless ({info.get('reason', 'Ожидает запроса')})"
+            status_text = f"Serverless ({info.get('reason', 'Wakes up on request')})"
         elif "timeout" in status:
             icon = "🟡"
-            status_text = "Спящий режим (ожидание)"
+            status_text = "Standby (Waiting)"
         else:
             icon = "🔴"
-            status_text = f"Недоступен ({status})"
+            status_text = f"Offline ({status})"
             
         response_lines.append(f"{icon} *{name}*: {status_text}")
         
@@ -56,21 +56,21 @@ async def cmd_analyze(message: types.Message, state: FSMContext):
     await state.clear()
     await state.set_state(AnalysisSession.waiting_for_batch_images)
     await state.update_data(images=[], caption="")
-    await message.answer("Режим пакетной загрузки активирован. Отправьте серию снимков (по одному или альбомом).")
+    await message.answer("Batch upload mode activated. Send a series of images (one by one or as an album).")
 
 @router.message(Command("clear"))
 async def cmd_clear(message: types.Message, state: FSMContext):
     if not auth_service.is_user_whitelisted(message.from_user.id):
         return
-    
+
     current_state = await state.get_state()
     if current_state:
         await state.clear()
-        
+
     # Always call both clears just to be safe
     success_session = await api_client.clear_session(message.from_user.id)
     success_batch = await api_client.cancel_batch(message.from_user.id)
-    
+
     if success_session or success_batch:
         await message.answer("Conversation context and pending batches have been cleared.")
     else:
@@ -84,11 +84,10 @@ async def cmd_end(message: types.Message, state: FSMContext):
     """
     if not auth_service.is_user_whitelisted(message.from_user.id):
         return
-        
+
     await state.clear()
     await api_client.clear_session(message.from_user.id)
-    await message.answer("Сессия завершена. История очищена. Вы можете начать новый разбор.")
-
+    await message.answer("Session ended. History cleared. You can start a new analysis.")
 @router.message(Command("refresh_whitelist"))
 async def cmd_refresh_whitelist(message: types.Message):
     user = auth_service.get_user(message.from_user.id)
