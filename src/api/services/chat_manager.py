@@ -186,6 +186,20 @@ class ChatManager:
                 statuses[route_id] = {"name": name, "status": "offline", "reason": "No URL"}
                 continue
                 
+            # Serverless protection: By default, do not ping https URLs unless explicitly marked pingable
+            # Local/tunnel URLs (http://) are pinged by default unless explicitly disabled
+            is_https = url.startswith("https://")
+            pingable_default = not is_https
+            is_pingable = config.get("pingable", pingable_default)
+
+            if not is_pingable:
+                statuses[route_id] = {
+                    "name": name, 
+                    "status": "serverless", 
+                    "reason": "Просыпается только при запросе"
+                }
+                continue
+                
             parsed = urlparse(url)
             base_url = f"{parsed.scheme}://{parsed.netloc}"
             

@@ -35,6 +35,9 @@ async def cmd_status(message: types.Message):
         if status == "online":
             icon = "🟢"
             status_text = "Доступен"
+        elif status == "serverless":
+            icon = "☁️"
+            status_text = f"Serverless ({info.get('reason', 'Ожидает запроса')})"
         elif "timeout" in status:
             icon = "🟡"
             status_text = "Спящий режим (ожидание)"
