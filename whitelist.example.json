@@ -1,0 +1,32 @@
+{
+  "users": {
+    "123456789": {
+      "name": "Dr. Gregory House",
+      "role": "admin",
+      "is_active": true,
+      "system_prompt_type": 1,
+      "allowed_workers": ["local_python", "cloud_batch"],
+      "daily_limit": 50,
+      "specialty": "Radiology",
+      "show_thoughts": true
+    },
+    "987654321": {
+      "name": "Dr. John Watson",
+      "role": "user",
+      "is_active": true,
+      "system_prompt_type": 2,
+      "allowed_workers": ["local_python"],
+      "show_thoughts": false
+    }
+  },
+  "prompts": {
+    "1": {
+      "description": "Standard Radiologist Assistant",
+      "content": "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers. Focus on diagnostic findings."
+    },
+    "2": {
+      "description": "Pediatric Radiologist Specialist",
+      "content": "You are an expert pediatric radiologist. Tailor your language for pediatric cases and focus on specific developmental indicators."
+    }
+  }
+}
