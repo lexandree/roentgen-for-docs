@@ -16,8 +16,10 @@ This project provides a secure, two-part system for medical image analysis using
 .
 ├── specs/              # Feature specifications and planning documents
 ├── src/
-│   ├── api/            # Local FastAPI backend (inference server)
-│   └── bot/            # Cloud-hosted Telegram bot (aiogram)
+│   ├── api/            # Local FastAPI backend (inference server/dispatcher)
+│   ├── bot/            # Cloud-hosted Telegram bot (aiogram)
+│   ├── shared/         # Shared services (Google Drive, whitelist)
+│   └── workers/        # Cloud batch processing adapters (Colab/Kaggle)
 └── tests/              # Unit and integration tests
 ```
 

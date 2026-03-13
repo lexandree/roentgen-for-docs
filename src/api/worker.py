@@ -38,6 +38,19 @@ async def run_inference(
         print(f"!!! INFERENCE WORKER ERROR: {e}")
         raise HTTPException(status_code=500, detail=f"Error during model inference: {e}")
 
+@app.post("/clear")
+async def clear_vram(model: MedGemmaModel = Depends(get_model)):
+    """
+    Explicitly resets the model's KV cache to free up VRAM for security and performance.
+    """
+    try:
+        if model.is_ready and model.model:
+            model.model.reset()
+        return {"status": "success", "message": "VRAM KV-cache cleared."}
+    except Exception as e:
+        print(f"!!! WORKER ERROR CLEARING VRAM: {e}")
+        raise HTTPException(status_code=500, detail=f"Error clearing VRAM: {e}")
+
 # This allows running the worker directly for testing
 if __name__ == "__main__":
     import uvicorn

@@ -152,7 +152,26 @@ class ChatManager:
             # Cascade delete in SQLite takes care of history
             await db.execute("DELETE FROM session_contexts WHERE session_id = ?", (session_id,))
             await db.commit()
-            # In a real system, we'd also tell the model to drop the KV-cache for this session
+            
+        # Attempt to clear KV cache on all configured inference workers to free VRAM
+        for route_id, config in settings.inference_workers.items():
+            worker_url = config.get("url", "")
+            if not worker_url:
+                continue
+                
+            # If the URL is our custom Python worker (ends with /infer)
+            if worker_url.endswith("/infer"):
+                clear_endpoint = worker_url.replace("/infer", "/clear")
+                try:
+                    # Fire and forget / clear timeout is low
+                    # In a production setting, this should ideally be an async background task 
+                    # so we don't slow down the response if workers are unresponsive.
+                    import asyncio
+                    asyncio.create_task(
+                        http_client.post(clear_endpoint, timeout=3.0)
+                    )
+                except Exception as e:
+                    print(f"Failed to clear VRAM for worker {route_id} at {clear_endpoint}: {e}")
 
     async def create_interaction_log(self, telegram_id: int, route: str, task_type: str, images_count: int, db) -> int:
         cursor = await db.execute(
