@@ -1,94 +1,94 @@
 # Developer Guide: Full CUDA-Accelerated Setup on Ubuntu with GTX 1060
 
-This document provides a step-by-step guide to configure a development environment for this project on a Linux machine (Ubuntu/Debian-based) with an NVIDIA GTX 1060. It covers all necessary steps to compile `llama-cpp-python` with full CUDA support for GPU acceleration.
+This document provides a step-by-step guide to configure a local inference server for this project on a Linux machine (Ubuntu/Debian-based) with an NVIDIA GTX 1060. 
 
-This process was validated on a system with a GTX 1060, an NVIDIA Driver supporting CUDA 13.0, and a fresh Conda installation.
+Instead of fighting with Python wrappers (`llama-cpp-python`), we will compile the official, native C++ `llama-server` directly from source. This guarantees maximum performance, lowest VRAM usage, and avoids complex Python environment conflicts with CUDA libraries.
 
 ## The Goal
 
-The primary challenge is to compile `llama-cpp-python` from source to ensure it can offload model layers to the GPU. This requires a specific version of the CUDA Toolkit and a compatible C++/C compiler, all managed within a self-contained Conda environment to avoid system-wide conflicts.
+Compile `llama.cpp` with full CUDA backend support (`GGML_CUDA=ON`) tailored specifically for the GTX 1060's Pascal architecture (Compute Capability 6.1).
 
 ## Step-by-Step Installation
 
-### Step 1: Install System-Level Build Tools
+### Step 1: Install System Build Tools
 
-The compilation process requires essential build tools like `gcc`, `g++`, and `make`.
+The compilation process requires `cmake` and essential C/C++ compilers.
 
-1.  Open a terminal and update your package lists:
-    ```bash
-    sudo apt-get update
-    ```
+```bash
+sudo apt-get update
+sudo apt-get install build-essential cmake git -y
+```
 
-2.  Install the `build-essential` package:
-    ```bash
-    sudo apt-get install build-essential
-    ```
-    This provides the necessary C/C++ compilers that will be used by CMake and `pip`.
+### Step 2: Prepare CUDA Environment (via Conda)
 
-### Step 2: Create and Configure the Conda Environment (Multi-Step)
+If you already have a full system-wide NVIDIA CUDA Toolkit installed, you can skip this step. However, if you are using Conda, the cleanest way to get the necessary CUDA libraries (like `nvcc` and `libcudart`) without modifying your host OS is to install them into your active environment.
 
-This is the most critical part. We will create a Conda environment in stages to avoid known dependency conflicts (specifically with the `gdb` package in `conda-forge`).
+1. Activate your environment:
+   ```bash
+   conda activate medgemma
+   ```
+2. Install the CUDA 12.4 Toolkit (compatible with driver version 13.x):
+   ```bash
+   conda install -c "nvidia/label/cuda-12.4.0" cuda-toolkit -y
+   ```
 
-1.  **Clean up any previous attempts.** If a `medgemma` environment exists, remove it completely to ensure a fresh start.
-    ```bash
-    conda deactivate
-    # The -rf flag is crucial for cleaning up after failed installations
-    rm -rf /path/to/your/miniconda3/envs/medgemma 
-    ```
+### Step 3: Clone and Compile `llama.cpp`
 
-2.  **Create a base environment** with only Python and the specific CUDA Toolkit required by the NVIDIA driver. We use CUDA 11.8 for its broad compatibility and stability with the GTX 1060 architecture.
-    ```bash
-    conda create -n medgemma -c nvidia python=3.12 'cuda-toolkit=11.8' -y
-    ```
+We will pull the latest source code from the official repository and compile it.
 
-3.  **Activate the new environment.**
-    ```bash
-    conda activate medgemma
-    ```
+1. **Clone the repository** (do this in the root of your `roentgen-for-docs` project or alongside it):
+   ```bash
+   git clone https://github.com/ggml-org/llama.cpp
+   cd llama.cpp
+   ```
 
-4.  **Install the compatible C/C++ compilers** into the active environment. CUDA Toolkit 11.8 is not compatible with GCC versions newer than 11. We install GCC 11 from `conda-forge` to satisfy this requirement.
-    ```bash
-    conda install -c conda-forge 'gcc_linux-64=11' 'gxx_linux-64=11' -y
-    ```
+2. **Configure the build with CMake:**
+   Here we explicitly enable CUDA (`-DGGML_CUDA=ON`). To drastically speed up compilation time, we also tell the compiler to *only* build for the GTX 1060 architecture (`-DCMAKE_CUDA_ARCHITECTURES=61`).
+   
+   ```bash
+   cmake -B build -DGGML_CUDA=ON -DCMAKE_CUDA_ARCHITECTURES=61
+   ```
 
-### Step 3: Install Python Dependencies and Compile `llama-cpp-python`
+3. **Build the server:**
+   Use the `-j` flag to compile using multiple CPU cores (e.g., `-j 8` if you have 8 threads).
+   ```bash
+   cmake --build build --config Release -j 8
+   ```
+   *Note: This process usually takes 5-10 minutes.*
 
-1.  **Install base Python packages** using `pip`.
-    ```bash
-    pip install fastapi uvicorn pydantic pydantic-settings aiosqlite google-api-python-client apscheduler python-multipart transformers accelerate Pillow
-    ```
+### Step 4: Download Models
 
-2.  **Fix potential dependency conflicts.** A common warning involves `sympy`. Manually install the version required by PyTorch for a clean setup (this step is optional but recommended).
-    ```bash
-    pip install sympy==1.13.1
-    ```
+Ensure you have a `models` directory in your main `roentgen-for-docs` folder. You must have both the main model and the vision projector:
+*   Main model: `medgemma-1.5-4b.gguf` (Q4_K_M recommended for 6GB VRAM).
+*   Vision projector: `mmproj-model-f16.gguf`.
 
-3.  **Compile and install `llama-cpp-python` with CUDA support.** This is the final and longest step. The environment variables tell the installer to build the library from source using the CUDA backend (`GGML_CUDA`).
-    
-    *   First, ensure any old version is gone:
-        ```bash
-        pip uninstall llama-cpp-python -y
-        ```
-    *   Then, run the compilation command. We explicitly set the CUDA architecture to `61` (which corresponds to the GTX 1060's Pascal architecture) to prevent "no kernel image available" errors.
-        ```bash
-        CMAKE_ARGS="-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES=61" FORCE_CMAKE=1 pip install --no-cache-dir llama-cpp-python
-        ```
-        This process will take a significant amount of time (potentially 30-60 minutes) as it compiles the entire C++/CUDA library from scratch, using all available CPU cores. **Do not interrupt it.**
+## Running the Server
 
-## Step 4: Final Setup and Verification
+Once compiled, the binary will be located in the `build/bin/` directory.
 
-1.  **Create a `models` directory** in the root of the project.
-    ```bash
-    mkdir -p models
-    ```
+Start the native server, offloading 24 layers to the GPU (`-ngl 24`). The context size (`-c 2048`) is enough for a standard medical image analysis.
 
-2.  **Download the models.** Since MedGemma 1.5 is a multimodal model (LLaVA architecture), you must download **two** files and place them inside the `models` directory:
-    *   The main quantized model: `medgemma-1.5-4b.gguf` (e.g., Q4_K_M or Q6_K version).
-    *   The vision projector model: `mmproj-model-f16.gguf`.
+```bash
+./llama.cpp/build/bin/llama-server \
+  -m models/medgemma-1.5-4b.gguf \
+  --mmproj models/mmproj-model-f16.gguf \
+  -ngl 24 \
+  -c 2048 \
+  --port 8080 \
+  --host 127.0.0.1
+```
 
-3.  **Run the Worker.** You can now launch the API worker. It will load both the model and the projector, offloading layers to your GTX 1060.
-    ```bash
-    python -m src.api.worker
-    ```
+**Verification:**
+1. Watch the terminal output during startup. You should see `ggml_cuda_init: found 1 CUDA devices` and `llm_load_tensors: offloaded 24/28 layers to GPU`.
+2. Open a new terminal and run `nvidia-smi`. You should see `llama-server` occupying approximately 3GB of VRAM.
 
-The worker is now ready to receive inference requests from the dispatcher.
+## Connecting the Bot
+
+Finally, tell the Dispatcher API to route requests to your newly compiled C++ server.
+
+Update the `INFERENCE_WORKERS` JSON string in your `.env` (or `src/api/config.py`):
+```json
+INFERENCE_WORKERS={"local_cpp":{"name":"GTX 1060 (C++)","url":"http://127.0.0.1:8080/v1/chat/completions"}}
+```
+
+Restart your Python API Dispatcher. Your bot is now fully hardware-accelerated.
