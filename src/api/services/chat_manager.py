@@ -171,6 +171,11 @@ class ChatManager:
                         thought_text = thought_match.group(1).strip()
                         cleaned_text = re.sub(r'thought\n.*?(?=\n\n|\Z)', '', cleaned_text, flags=re.DOTALL).strip()
                         
+            # If the model ONLY output thoughts and nothing else (e.g. got cut off by max_tokens),
+            # we should return the thoughts as the main response so the user doesn't get an empty message.
+            if not cleaned_text and thought_text:
+                cleaned_text = thought_text
+
             # Safer fallback: if the model completely ignores tags but outputs a lot of text, 
             # we do NOT try to guess based on languages or paragraphs as it causes false positives.
             # We rely on the system prompt to enforce formatting. 
