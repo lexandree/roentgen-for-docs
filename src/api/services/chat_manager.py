@@ -36,26 +36,48 @@ class ChatManager:
 
         if not system_prompt_text:            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
 
-        # System prompt to reduce verbosity
-        system_prompt = {
-            "role": "system",
-            "content": system_prompt_text
-        }
-        
-        # Prepend system prompt
-        final_messages = [system_prompt] + messages
-
         # Determine worker type based on URL
         if worker_url.endswith("/v1/chat/completions"):
             # OpenAI compatible (like llama-server)
             inference_endpoint = worker_url
+            
+            # For strict chat templates (like Gemma), the system prompt often causes Jinja errors
+            # if sent as a separate role because the template expects strict user/model alternation.
+            # We squash the system prompt into the first user message.
+            if messages and messages[0]["role"] == "user":
+                first_msg_content = messages[0]["content"]
+                if isinstance(first_msg_content, list):
+                    # Multimodal content
+                    text_found = False
+                    for part in first_msg_content:
+                        if part["type"] == "text":
+                            part["text"] = f"[{system_prompt_text}]\n\n{part['text']}"
+                            text_found = True
+                            break
+                    if not text_found:
+                        first_msg_content.append({"type": "text", "text": f"[{system_prompt_text}]"})
+                else:
+                    # String content
+                    messages[0]["content"] = f"[{system_prompt_text}]\n\n{first_msg_content}"
+                
+                final_messages = messages
+            else:
+                # Fallback if history is weird
+                final_messages = [{"role": "system", "content": system_prompt_text}] + messages
+
             payload = {
                 "messages": final_messages,
                 "temperature": 0.0, # Deterministic medical answers
                 "max_tokens": settings.llama_max_tokens
             }
         else:
-            # Our custom Python worker (/infer)
+            # Our custom Python worker (/infer) handles the system prompt array injection natively
+            system_prompt = {
+                "role": "system",
+                "content": system_prompt_text
+            }
+            final_messages = [system_prompt] + messages
+            
             inference_endpoint = worker_url if worker_url.endswith("/infer") else f"{worker_url.rstrip('/')}/infer"
             payload = {
                 "messages": final_messages
