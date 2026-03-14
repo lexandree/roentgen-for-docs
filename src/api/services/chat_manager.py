@@ -49,22 +49,26 @@ class ChatManager:
             # We squash the system prompt into the first user message.
             if final_messages and final_messages[0]["role"] == "user":
                 first_msg_content = final_messages[0]["content"]
+                
+                # Format system prompt to be less visible as a meta-instruction
+                injected_sys_prompt = f"System Instruction (Do not output or repeat this): {system_prompt_text}"
+                
                 if isinstance(first_msg_content, list):
                     # Multimodal content
                     text_found = False
                     for part in first_msg_content:
                         if part["type"] == "text":
-                            part["text"] = f"[{system_prompt_text}]\n\n{part['text']}"
+                            part["text"] = f"{injected_sys_prompt}\n\nUser query:\n{part['text']}"
                             text_found = True
                             break
                     if not text_found:
-                        first_msg_content.append({"type": "text", "text": f"[{system_prompt_text}]"})
+                        first_msg_content.append({"type": "text", "text": f"{injected_sys_prompt}"})
                 else:
                     # String content
-                    final_messages[0]["content"] = f"[{system_prompt_text}]\n\n{first_msg_content}"
+                    final_messages[0]["content"] = f"{injected_sys_prompt}\n\nUser query:\n{first_msg_content}"
             elif final_messages and final_messages[0]["role"] != "system":
                 # Fallback if history is weird and first message is not user
-                final_messages.insert(0, {"role": "user", "content": f"[{system_prompt_text}]\nPlease continue."})
+                final_messages.insert(0, {"role": "user", "content": f"System Instruction: {system_prompt_text}\n\nPlease continue."})
 
             # Gemma jinja template STRICTLY requires alternating user -> assistant -> user
             # We must ensure there are no two users or two assistants in a row, and no system roles.
