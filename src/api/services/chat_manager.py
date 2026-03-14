@@ -160,16 +160,39 @@ class ChatManager:
                 think_match = re.search(r'<think>(.*?)</think>', cleaned_text, flags=re.DOTALL)
                 if think_match:
                     thought_text = think_match.group(1).strip()
-                    cleaned_text = re.sub(r'<think>.*?</think>', '', cleaned_text, flags=re.DOTALL)
+                    cleaned_text = re.sub(r'<think>.*?</think>', '', cleaned_text, flags=re.DOTALL).strip()
                 else:
                     thought_match = re.search(r'thought\n(.*?)(\n\n|\Z)', cleaned_text, flags=re.DOTALL)
                     if thought_match:
                         thought_text = thought_match.group(1).strip()
-                        cleaned_text = re.sub(r'thought\n.*?(?=\n\n|\Z)', '', cleaned_text, flags=re.DOTALL)
+                        cleaned_text = re.sub(r'thought\n.*?(?=\n\n|\Z)', '', cleaned_text, flags=re.DOTALL).strip()
+                        
+            # Heuristic fallback for unstructured Chain-of-Thought (e.g. numbered lists followed by a conclusion)
+            if not thought_text:
+                paragraphs = raw_text.split('\n\n')
+                if len(paragraphs) > 1:
+                    first_para = paragraphs[0].strip()
+                    if first_para.startswith("1. ") or "I understand" in first_para or "The user" in first_para or "I need to" in first_para:
+                        valid_paras = [p.strip() for p in paragraphs if p.strip()]
+                        if len(valid_paras) > 1:
+                            thought_text = "\n\n".join(valid_paras[:-1])
+                            last_para = valid_paras[-1]
+                            
+                            # Check if an English reasoning sentence is glued directly to the Russian final answer
+                            cyrillic_transition = re.search(r'^(.*?)([.?!])\s*([А-Яа-яЁё].*)$', last_para)
+                            if cyrillic_transition:
+                                eng_part = cyrillic_transition.group(1)
+                                if not re.search(r'[А-Яа-яЁё]', eng_part):
+                                    thought_text += "\n\n" + eng_part.strip() + cyrillic_transition.group(2)
+                                    cleaned_text = cyrillic_transition.group(3).strip()
+                                else:
+                                    cleaned_text = last_para.strip()
+                            else:
+                                cleaned_text = last_para.strip()
 
             return {
                 "report": cleaned_text.strip(),
-                "thought": thought_text,
+                "thought": thought_text.strip(),
                 "raw_text": raw_text,
                 "telemetry": telemetry
             }
