@@ -56,7 +56,7 @@ class ChatManager:
             }
         else:
             # Our custom Python worker (/infer)
-            inference_endpoint = f"{worker_url.rstrip('/')}/infer"
+            inference_endpoint = worker_url if worker_url.endswith("/infer") else f"{worker_url.rstrip('/')}/infer"
             payload = {
                 "messages": final_messages
             }
