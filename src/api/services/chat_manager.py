@@ -34,7 +34,7 @@ class ChatManager:
         if not worker_url:
             raise ValueError(f"No valid URL found for route {route}.")
 
-        if not system_prompt_text:            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
+        if not system_prompt_text:            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
 
         # Determine worker type based on URL
         if worker_url.endswith("/v1/chat/completions"):
@@ -167,28 +167,10 @@ class ChatManager:
                         thought_text = thought_match.group(1).strip()
                         cleaned_text = re.sub(r'thought\n.*?(?=\n\n|\Z)', '', cleaned_text, flags=re.DOTALL).strip()
                         
-            # Heuristic fallback for unstructured Chain-of-Thought (e.g. numbered lists followed by a conclusion)
-            if not thought_text:
-                paragraphs = raw_text.split('\n\n')
-                if len(paragraphs) > 1:
-                    first_para = paragraphs[0].strip()
-                    if first_para.startswith("1. ") or "I understand" in first_para or "The user" in first_para or "I need to" in first_para:
-                        valid_paras = [p.strip() for p in paragraphs if p.strip()]
-                        if len(valid_paras) > 1:
-                            thought_text = "\n\n".join(valid_paras[:-1])
-                            last_para = valid_paras[-1]
-                            
-                            # Check if an English reasoning sentence is glued directly to the Russian final answer
-                            cyrillic_transition = re.search(r'^(.*?)([.?!])\s*([А-Яа-яЁё].*)$', last_para)
-                            if cyrillic_transition:
-                                eng_part = cyrillic_transition.group(1)
-                                if not re.search(r'[А-Яа-яЁё]', eng_part):
-                                    thought_text += "\n\n" + eng_part.strip() + cyrillic_transition.group(2)
-                                    cleaned_text = cyrillic_transition.group(3).strip()
-                                else:
-                                    cleaned_text = last_para.strip()
-                            else:
-                                cleaned_text = last_para.strip()
+            # Safer fallback: if the model completely ignores tags but outputs a lot of text, 
+            # we do NOT try to guess based on languages or paragraphs as it causes false positives.
+            # We rely on the system prompt to enforce formatting. 
+            # If it still fails, the user gets the raw output, which is safer than truncating a real medical answer.
 
             return {
                 "report": cleaned_text.strip(),

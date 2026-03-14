@@ -89,6 +89,6 @@ class APIAuthService:
         if row and row["content"]:
             return row["content"]
         # Default prompt if not found
-        return "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'."
+        return "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
 
 auth_service = APIAuthService()
