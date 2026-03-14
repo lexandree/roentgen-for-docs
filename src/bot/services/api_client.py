@@ -32,12 +32,34 @@ class APIClient:
                 logger.error(f"Failed to fetch workers status: {e}")
                 return {}
 
-    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str = "local_python") -> str:
+    async def get_session_info(self, telegram_id: int) -> dict:
+        """Fetches the active session info (current route, image status)."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/chat/session", params={"telegram_id": telegram_id})
+                response.raise_for_status()
+                return response.json().get("data", {"active_session": False})
+            except Exception as e:
+                logger.error(f"Failed to fetch session info: {e}")
+                return {"active_session": False}
+
+    async def set_session_route(self, telegram_id: int, route: str) -> bool:
+        """Explicitly sets the active worker route for the current session."""
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            try:
+                response = await client.post(f"{self.base_url}/chat/session/route", json={"telegram_id": telegram_id, "route": route})
+                return response.status_code == 200
+            except Exception as e:
+                logger.error(f"Failed to set session route: {e}")
+                return False
+
+    async def send_message(self, telegram_id: int, text: str | None = None, image_bytes: bytes | None = None, route: str | None = None) -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             data = {
-                "telegram_id": telegram_id,
-                "route": route
+                "telegram_id": telegram_id
             }
+            if route:
+                data["route"] = route
             if text:
                 data["text"] = text
             

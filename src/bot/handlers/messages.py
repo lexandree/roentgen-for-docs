@@ -22,6 +22,7 @@ async def cmd_status(message: types.Message):
     
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     statuses = await api_client.get_workers_status()
+    session_info = await api_client.get_session_info(message.from_user.id)
     
     if not statuses:
         await message.answer("⚠️ Failed to retrieve server statuses. Dispatcher might be offline.")
@@ -31,6 +32,10 @@ async def cmd_status(message: types.Message):
     for route_id, info in statuses.items():
         name = info.get("name", route_id)
         status = info.get("status", "unknown")
+        
+        # Highlight active route
+        is_active = session_info.get("active_session") and session_info.get("route") == route_id
+        active_marker = " (👈 Текущий)" if is_active else ""
         
         if status == "online":
             icon = "🟢"
@@ -45,9 +50,25 @@ async def cmd_status(message: types.Message):
             icon = "🔴"
             status_text = f"Offline ({status})"
             
-        response_lines.append(f"{icon} *{name}*: {status_text}")
+        response_lines.append(f"{icon} *{name}*: {status_text}{active_marker}")
+        
+    if session_info.get("active_session") and session_info.get("has_image"):
+        response_lines.append("\n🖼 *В памяти есть активный снимок.*")
         
     await message.answer("\n".join(response_lines), parse_mode="Markdown")
+
+@router.message(Command("model"))
+async def cmd_model(message: types.Message, state: FSMContext):
+    if not auth_service.is_user_whitelisted(message.from_user.id):
+        return
+    from src.bot.handlers.images import get_dynamic_keyboard
+    
+    # Store that we are just changing route without an image
+    await state.set_state(AnalysisSession.waiting_for_route)
+    await state.update_data(images=[], caption="", file_id=None, is_text_only_route_switch=True)
+    
+    keyboard = await get_dynamic_keyboard()
+    await message.answer("Выберите нейросеть (воркер) для текущего диалога:", reply_markup=keyboard)
 
 @router.message(Command("analyze"))
 async def cmd_analyze(message: types.Message, state: FSMContext):
@@ -109,9 +130,19 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     file_id = data.get("file_id")
     images = data.get("images", [])
     caption = data.get("caption")
+    is_text_only = data.get("is_text_only_route_switch", False)
 
     await state.clear()
     
+    if is_text_only:
+        success = await api_client.set_session_route(callback.from_user.id, route)
+        if success:
+            await callback.message.edit_text(f"✅ Воркер для текущего диалога изменен на: {route.upper()}")
+        else:
+            await callback.message.edit_text("❌ Ошибка при смене воркера.")
+        await callback.answer()
+        return
+
     await callback.message.edit_text(f"Маршрут выбран: {route.upper()}. Начинаю загрузку...")
     await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="upload_photo")
 

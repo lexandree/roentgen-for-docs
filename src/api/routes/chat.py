@@ -29,12 +29,45 @@ async def get_workers_status():
     statuses = await chat_manager.check_workers_health()
     return {"status": "success", "data": {"workers": statuses}}
 
+@router.get("/session")
+async def get_session_info(telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """
+    Returns information about the user's current active session.
+    """
+    cursor = await db.execute("SELECT session_id, current_route, has_active_image FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
+    row = await cursor.fetchone()
+    if row:
+        return {"status": "success", "data": {"active_session": True, "route": row["current_route"], "has_image": bool(row["has_active_image"])}}
+    return {"status": "success", "data": {"active_session": False}}
+
+@router.post("/session/route")
+async def set_session_route(data: dict, db: aiosqlite.Connection = Depends(get_db)):
+    telegram_id = data.get("telegram_id")
+    route = data.get("route")
+    if not telegram_id or not route:
+        raise HTTPException(status_code=400, detail="telegram_id and route required.")
+
+    if route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail="Invalid route.")
+
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
+        raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        raise HTTPException(status_code=403, detail="User not permitted to use worker.")
+
+    # Just get or create session with the new default route, which will update it
+    await chat_manager.get_or_create_session(telegram_id, db, default_route=route)
+    return {"status": "success", "message": "Route updated."}
+
 @router.post("/message")
 async def process_message(
     telegram_id: Annotated[int, Form()],
     text: Annotated[str | None, Form()] = None,
     image: Annotated[UploadFile | None, File()] = None,
-    route: Annotated[str | None, Form()] = "local_python",
+    route: Annotated[str | None, Form()] = None,
     db: aiosqlite.Connection = Depends(get_db)
 ):
     user_config = await auth_service.get_user_config(telegram_id, db)
@@ -44,37 +77,45 @@ async def process_message(
     if not text and not image:
         raise HTTPException(status_code=400, detail="Must provide text or image.")
 
-    if route not in settings.inference_workers:
-        if settings.inference_workers:
-            # Fallback to the first available worker if an invalid or legacy route is provided
-            route = next(iter(settings.inference_workers.keys()))
-        else:
-            raise HTTPException(status_code=400, detail=f"No inference workers configured.")
+    # We need to get or create the session first to resolve the route if it's omitted
+    # But if there's a new image, we clear the old session and its route anyway.
+    if image:
+        await chat_manager.clear_session(telegram_id, db)
+
+    # Determine default fallback route if none provided and no session exists
+    fallback_route = next(iter(settings.inference_workers.keys())) if settings.inference_workers else None
+
+    # This will load the session's current route if `route` is None.
+    # If `route` is provided, it updates the session's current route.
+    session_id, active_route = await chat_manager.get_or_create_session(telegram_id, db, default_route=route)
+
+    # If the route wasn't explicitly provided, use the session's active route.
+    # If the session didn't have one either, use the fallback.
+    resolved_route = route or active_route or fallback_route
+
+    if not resolved_route or resolved_route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail=f"No valid inference workers configured or route invalid.")
 
     allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
-    if allowed_workers and route not in allowed_workers:
-        # If the fallback route is still not allowed, try finding the first allowed one
+    if allowed_workers and resolved_route not in allowed_workers:
+        # If the resolved route is not allowed, try finding the first allowed one
         valid_allowed = [w for w in allowed_workers if w in settings.inference_workers]
         if valid_allowed:
-            route = valid_allowed[0]
+            resolved_route = valid_allowed[0]
+            # Update session with the legally fallback route
+            await chat_manager.get_or_create_session(telegram_id, db, default_route=resolved_route)
         else:
-            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
+            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {resolved_route}")
 
     log_id = await chat_manager.create_interaction_log(
         telegram_id=telegram_id,
-        route=route,
+        route=resolved_route,
         task_type="single",
         images_count=1 if image else 0,
         db=db
     )
 
     try:
-        # If a new image is uploaded, we assume it's a new patient/case
-        # and automatically clear the old session to prevent context overflow.
-        if image:
-            await chat_manager.clear_session(telegram_id, db)
-            
-        session_id = await chat_manager.get_or_create_session(telegram_id, db)
         await chat_manager.update_interaction_log(log_id, "processing", db)
 
         # 1. Build current user message content

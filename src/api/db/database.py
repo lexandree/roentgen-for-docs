@@ -58,9 +58,18 @@ async def init_db():
                 telegram_id INTEGER,
                 last_activity TIMESTAMP,
                 has_active_image BOOLEAN DEFAULT 0,
+                current_route TEXT,
                 FOREIGN KEY(telegram_id) REFERENCES users(telegram_id)
             )
         """)
+        
+        # Migrations for session_contexts table
+        try:
+            await db.execute("ALTER TABLE session_contexts ADD COLUMN current_route TEXT")
+        except aiosqlite.OperationalError as e:
+            if "duplicate column name" not in str(e).lower():
+                raise e
+
         await db.execute("""
             CREATE TABLE IF NOT EXISTS message_history (
                 message_id INTEGER PRIMARY KEY AUTOINCREMENT,

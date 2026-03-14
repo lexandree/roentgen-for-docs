@@ -127,8 +127,8 @@ class ChatManager:
             print(f"Could not connect to worker {worker_url}: {e}")
             raise Exception(f"Failed to connect to inference worker: {e}")
 
-    async def get_or_create_session(self, telegram_id: int, db) -> str:
-        cursor = await db.execute("SELECT session_id, last_activity FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
+    async def get_or_create_session(self, telegram_id: int, db, default_route: str = None) -> tuple[str, str]:
+        cursor = await db.execute("SELECT session_id, last_activity, current_route FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
         row = await cursor.fetchone()
         
         now = datetime.now(timezone.utc)
@@ -141,18 +141,22 @@ class ChatManager:
             if (now - last_activity).total_seconds() > settings.session_timeout_seconds:
                 await self.clear_session(telegram_id, db)
             else:
-                await db.execute("UPDATE session_contexts SET last_activity = ? WHERE session_id = ?", (now, row["session_id"]))
+                route_to_use = default_route or row["current_route"]
+                if default_route and default_route != row["current_route"]:
+                    await db.execute("UPDATE session_contexts SET last_activity = ?, current_route = ? WHERE session_id = ?", (now, default_route, row["session_id"]))
+                else:
+                    await db.execute("UPDATE session_contexts SET last_activity = ? WHERE session_id = ?", (now, row["session_id"]))
                 await db.commit()
-                return row["session_id"]
+                return row["session_id"], route_to_use
                 
         # Create new session
         session_id = str(uuid.uuid4())
         await db.execute(
-            "INSERT INTO session_contexts (session_id, telegram_id, last_activity, has_active_image) VALUES (?, ?, ?, 0)",
-            (session_id, telegram_id, now)
+            "INSERT INTO session_contexts (session_id, telegram_id, last_activity, has_active_image, current_route) VALUES (?, ?, ?, 0, ?)",
+            (session_id, telegram_id, now, default_route)
         )
         await db.commit()
-        return session_id
+        return session_id, default_route
 
     async def add_message(self, session_id: str, role: str, content: str, db):
         await db.execute(
