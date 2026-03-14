@@ -45,7 +45,7 @@ class ChatManager:
             final_messages = copy.deepcopy(messages)
             
             # For strict chat templates (like Gemma), the system prompt often causes Jinja errors
-            # if sent as a separate role because the template expects strict user/model alternation.
+            # if sent as a separate role because the template expects strict user/assistant alternation.
             # We squash the system prompt into the first user message.
             if final_messages and final_messages[0]["role"] == "user":
                 first_msg_content = final_messages[0]["content"]
@@ -62,17 +62,45 @@ class ChatManager:
                 else:
                     # String content
                     final_messages[0]["content"] = f"[{system_prompt_text}]\n\n{first_msg_content}"
-            else:
-                # Fallback if history is weird
-                final_messages = [{"role": "system", "content": system_prompt_text}] + final_messages
+            elif final_messages and final_messages[0]["role"] != "system":
+                # Fallback if history is weird and first message is not user
+                final_messages.insert(0, {"role": "user", "content": f"[{system_prompt_text}]\nPlease continue."})
 
-            # Gemma jinja template requires the assistant role to be strictly named 'model'
+            # Gemma jinja template STRICTLY requires alternating user -> assistant -> user
+            # We must ensure there are no two users or two assistants in a row, and no system roles.
+            cleaned_alternating_messages = []
+            expected_role = "user"
+            
             for msg in final_messages:
-                if msg["role"] == "assistant":
-                    msg["role"] = "model"
+                if msg["role"] == "system":
+                    continue # Skip any stray system roles
+                
+                # Treat 'model' as 'assistant' to satisfy the Jinja template's literal string check
+                current_role = "assistant" if msg["role"] == "model" else msg["role"]
+                
+                if current_role == expected_role:
+                    cleaned_alternating_messages.append({"role": current_role, "content": msg["content"]})
+                    expected_role = "assistant" if current_role == "user" else "user"
+                else:
+                    # If we get two users in a row, or two assistants in a row, we merge their content
+                    # to maintain the strict alternation required by Gemma.
+                    if cleaned_alternating_messages:
+                        prev_msg = cleaned_alternating_messages[-1]
+                        
+                        # Merge content
+                        if isinstance(prev_msg["content"], str) and isinstance(msg["content"], str):
+                            prev_msg["content"] += f"\n\n{msg['content']}"
+                        elif isinstance(prev_msg["content"], list) and isinstance(msg["content"], list):
+                            prev_msg["content"].extend(msg["content"])
+                        elif isinstance(prev_msg["content"], list) and isinstance(msg["content"], str):
+                            prev_msg["content"].append({"type": "text", "text": msg["content"]})
+                        elif isinstance(prev_msg["content"], str) and isinstance(msg["content"], list):
+                            new_content = [{"type": "text", "text": prev_msg["content"]}]
+                            new_content.extend(msg["content"])
+                            prev_msg["content"] = new_content
 
             payload = {
-                "messages": final_messages,
+                "messages": cleaned_alternating_messages,
                 "temperature": 0.0, # Deterministic medical answers
                 "max_tokens": settings.llama_max_tokens
             }
