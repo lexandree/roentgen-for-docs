@@ -41,11 +41,14 @@ class ChatManager:
             # OpenAI compatible (like llama-server)
             inference_endpoint = worker_url
             
+            import copy
+            final_messages = copy.deepcopy(messages)
+            
             # For strict chat templates (like Gemma), the system prompt often causes Jinja errors
             # if sent as a separate role because the template expects strict user/model alternation.
             # We squash the system prompt into the first user message.
-            if messages and messages[0]["role"] == "user":
-                first_msg_content = messages[0]["content"]
+            if final_messages and final_messages[0]["role"] == "user":
+                first_msg_content = final_messages[0]["content"]
                 if isinstance(first_msg_content, list):
                     # Multimodal content
                     text_found = False
@@ -58,12 +61,15 @@ class ChatManager:
                         first_msg_content.append({"type": "text", "text": f"[{system_prompt_text}]"})
                 else:
                     # String content
-                    messages[0]["content"] = f"[{system_prompt_text}]\n\n{first_msg_content}"
-                
-                final_messages = messages
+                    final_messages[0]["content"] = f"[{system_prompt_text}]\n\n{first_msg_content}"
             else:
                 # Fallback if history is weird
-                final_messages = [{"role": "system", "content": system_prompt_text}] + messages
+                final_messages = [{"role": "system", "content": system_prompt_text}] + final_messages
+
+            # Gemma jinja template requires the assistant role to be strictly named 'model'
+            for msg in final_messages:
+                if msg["role"] == "assistant":
+                    msg["role"] = "model"
 
             payload = {
                 "messages": final_messages,
