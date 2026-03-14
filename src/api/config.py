@@ -33,7 +33,7 @@ class APISettings(BaseSettings):
     inference_workers: Dict[str, Dict[str, str]] = Field(
         default={
             "local_python": {
-                "name": "⚡️ Локально (Python)",
+                "name": "⚡️ Local (Python)",
                 "url": "http://127.0.0.1:8001/infer"
             }
         }, 

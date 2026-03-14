@@ -35,7 +35,7 @@ async def cmd_status(message: types.Message):
         
         # Highlight active route
         is_active = session_info.get("active_session") and session_info.get("route") == route_id
-        active_marker = " (👈 Текущий)" if is_active else ""
+        active_marker = " (👈 Current)" if is_active else ""
         
         if status == "online":
             icon = "🟢"
@@ -53,7 +53,7 @@ async def cmd_status(message: types.Message):
         response_lines.append(f"{icon} *{name}*: {status_text}{active_marker}")
         
     if session_info.get("active_session") and session_info.get("has_image"):
-        response_lines.append("\n🖼 *В памяти есть активный снимок.*")
+        response_lines.append("\n🖼 *Active image in memory.*")
         
     await message.answer("\n".join(response_lines), parse_mode="Markdown")
 
@@ -68,7 +68,7 @@ async def cmd_model(message: types.Message, state: FSMContext):
     await state.update_data(images=[], caption="", file_id=None, is_text_only_route_switch=True)
     
     keyboard = await get_dynamic_keyboard()
-    await message.answer("Выберите нейросеть (воркер) для текущего диалога:", reply_markup=keyboard)
+    await message.answer("Select an inference worker for the current conversation:", reply_markup=keyboard)
 
 @router.message(Command("analyze"))
 async def cmd_analyze(message: types.Message, state: FSMContext):
@@ -137,13 +137,13 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     if is_text_only:
         success = await api_client.set_session_route(callback.from_user.id, route)
         if success:
-            await callback.message.edit_text(f"✅ Воркер для текущего диалога изменен на: {route.upper()}")
+            await callback.message.edit_text(f"✅ Worker for current conversation changed to: {route.upper()}")
         else:
-            await callback.message.edit_text("❌ Ошибка при смене воркера.")
+            await callback.message.edit_text("❌ Error changing worker.")
         await callback.answer()
         return
 
-    await callback.message.edit_text(f"Маршрут выбран: {route.upper()}. Начинаю загрузку...")
+    await callback.message.edit_text(f"Route selected: {route.upper()}. Starting upload...")
     await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="upload_photo")
 
     try:

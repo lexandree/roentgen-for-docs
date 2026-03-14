@@ -180,7 +180,7 @@ async def process_message(
         
         final_response = f"[{route.upper()}-WORKER] {response_text}"
         if thought_text and user_config.get("show_thoughts"):
-            final_response = f"🤔 Мысли:\n{thought_text}\n\n{final_response}"
+            final_response = f"🤔 Thoughts:\n{thought_text}\n\n{final_response}"
         
         # Update log with telemetry
         await chat_manager.update_interaction_log(

@@ -25,12 +25,12 @@ async def main():
 
     from aiogram.types import BotCommand
     await bot.set_my_commands([
-        BotCommand(command="start", description="Начать работу"),
-        BotCommand(command="status", description="Статус воркеров и текущей сессии"),
-        BotCommand(command="model", description="Выбрать воркер для обычного диалога"),
-        BotCommand(command="analyze", description="Запустить пакетный (batch) анализ"),
-        BotCommand(command="clear", description="Очистить контекст и память VRAM"),
-        BotCommand(command="end", description="Завершить сессию (то же, что /clear)"),
+        BotCommand(command="start", description="Start the bot"),
+        BotCommand(command="status", description="Status of workers and current session"),
+        BotCommand(command="model", description="Select worker for text conversation"),
+        BotCommand(command="analyze", description="Start batch analysis mode"),
+        BotCommand(command="clear", description="Clear context and VRAM memory"),
+        BotCommand(command="end", description="End session (same as /clear)"),
     ])
 
     await dp.start_polling(bot)
