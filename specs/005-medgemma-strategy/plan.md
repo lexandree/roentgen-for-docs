@@ -5,15 +5,15 @@
 
 ## Summary
 
-Implement strict inference formatting and explicit KV Cache invalidation mechanisms in the Python Dispatcher (`src/api/services/chat_manager.py`). This addresses the hardware constraints of the GTX 1060 (-np 1, 6GB VRAM) and mitigates hallucination issues inherent to the MedGemma architecture when running natively on `llama-server`.
+Implement strict inference formatting, GBNF grammar, and optimal KV Cache management strategies for MedGemma. This addresses hardware constraints (avoiding `-c 8192` OOMs via `-c 6144` or `-np 3` slot division) and mitigates hallucination issues inherent to the Gemma architecture on `llama-server`. It includes exploring a custom `.jinja` template to cleanly handle system prompts.
 
 ## Technical Context
 
-**Language/Version**: Python 3.12+ (FastAPI dispatcher)
+**Language/Version**: Python 3.12+ (FastAPI dispatcher), C++ (llama-server)
 **Primary Dependencies**: `httpx`, `aiosqlite`
 **Target Platform**: Linux server connecting to local `llama-server` instances.
 **Project Type**: Web-service (Dispatcher API)
-**Constraints**: Extremely tight VRAM margins (~6GB total), single-slot KV Cache management (`-np 1`), strict Jinja template formatting.
+**Constraints**: Tight VRAM margins (~6GB total require `-c 6144` to avoid CLIP buffer OOMs), KV cache slot division (`-np 3` for multi-role concurrency or `-np 1` with manual flushing), strict Jinja template formatting requiring either Python injection or a custom `.jinja` file.
 
 ## Constitution Check
 

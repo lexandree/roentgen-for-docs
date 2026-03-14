@@ -26,14 +26,14 @@ As a radiologist, I want the AI to strictly format its responses according to st
 
 As a system administrator, I want the system to efficiently use the KV cache for repeated system prompts but isolate context when different users interact with the bot, so that context bleed does not occur and VRAM is conserved.
 
-**Why this priority**: With `-np 1` (a single slot on the GTX 1060), alternating between different system prompts (e.g., Doctor vs Patient) without clearing the slot causes cache fragmentation and massive performance degradation.
+**Why this priority**: Without proper cache management, alternating between different system prompts (e.g., Doctor vs Patient) causes cache fragmentation and massive performance degradation. 
 
-**Independent Test**: Can be tested by simulating two different users with different system prompts querying the bot sequentially and verifying in the server logs that the slot is cleared and re-warmed cleanly.
+**Independent Test**: Can be tested by simulating two different users with different system prompts querying the bot sequentially and verifying in the server logs that the slot architecture handles it cleanly without context bleed.
 
 **Acceptance Scenarios**:
 
-1. **Given** a user with System Prompt A finishes a query, **When** a user with System Prompt B starts a query, **Then** the dispatcher sends a slot reset command (`{"id_slot": 0, "messages": [], "cache_prompt": false}`) before sending the new query.
-2. **Given** a user with System Prompt A sends a second query, **When** the dispatcher routes it, **Then** it uses `"cache_prompt": true` and does NOT reset the slot, leveraging the existing KV cache.
+1. **Given** the system is configured for multi-slot (`-np 3`), **When** a Doctor and Patient query simultaneously, **Then** the server automatically routes them to their dedicated slots, keeping both system prompts hot in VRAM.
+2. **Given** the system is constrained to a single slot (`-np 1`) for maximum context length, **When** a user with System Prompt B starts a query after System Prompt A, **Then** the dispatcher explicitly sends a slot reset command (`{"id_slot": 0, "messages": [], "cache_prompt": false}`) before sending the new query.
 
 ## Requirements *(mandatory)*
 
