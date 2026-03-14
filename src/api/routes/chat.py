@@ -93,8 +93,15 @@ async def process_message(
     # If the session didn't have one either, use the fallback.
     resolved_route = route or active_route or fallback_route
 
+    # If the resolved route (e.g. from an old session) is no longer valid, override it
+    if resolved_route and resolved_route not in settings.inference_workers:
+        resolved_route = fallback_route
+        # Update the session with the corrected fallback route
+        if resolved_route:
+            await chat_manager.get_or_create_session(telegram_id, db, default_route=resolved_route)
+
     if not resolved_route or resolved_route not in settings.inference_workers:
-        raise HTTPException(status_code=400, detail=f"No valid inference workers configured or route invalid.")
+        raise HTTPException(status_code=400, detail=f"No valid inference workers configured.")
 
     allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
     if allowed_workers and resolved_route not in allowed_workers:
@@ -162,7 +169,7 @@ async def process_message(
 
         # 3. Dispatch full messages array to worker
         # The worker now returns a structure that might include telemetry
-        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, route)
+        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, resolved_route)
 
         # Handle both legacy string response and new dict response with telemetry        
         if isinstance(worker_response, dict):
@@ -178,7 +185,7 @@ async def process_message(
         assistant_content = [{"type": "text", "text": response_text}]
         await chat_manager.add_message(session_id, "assistant", json.dumps(assistant_content), db)
         
-        final_response = f"[{route.upper()}-WORKER] {response_text}"
+        final_response = f"[{resolved_route.upper()}-WORKER] {response_text}"
         if thought_text and user_config.get("show_thoughts"):
             final_response = f"🤔 Thoughts:\n{thought_text}\n\n{final_response}"
         
