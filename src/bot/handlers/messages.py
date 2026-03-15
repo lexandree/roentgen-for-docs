@@ -131,6 +131,7 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     images = data.get("images", [])
     caption = data.get("caption")
     is_text_only = data.get("is_text_only_route_switch", False)
+    is_batch_upload = data.get("is_batch_upload", True) # Default True for legacy compatibility
 
     await state.clear()
     
@@ -147,9 +148,9 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     await callback.bot.send_chat_action(chat_id=callback.message.chat.id, action="upload_photo")
 
     try:
-        # Determine if this is a batch or single image request
-        if len(images) > 1 or (not file_id and images):
-            # Batch processing
+        # Determine if this is a cloud batch or local multi-image request
+        if is_batch_upload and (len(images) > 1 or (not file_id and images)):
+            # Cloud Batch processing
             images_bytes = []
             for img_id in images:
                 if img_id == "ignored":
@@ -165,20 +166,20 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
                 text=caption
             )
         else:
-            # Single image processing
-            img_id_to_use = file_id or (images[0] if images else None)
-            if not img_id_to_use:
-                await callback.message.answer("No image to process.")
-                return
-                
-            file_in_memory = BytesIO()
-            await callback.bot.download(img_id_to_use, destination=file_in_memory)
-            image_bytes = file_in_memory.getvalue()
+            # Local processing (Single or Multi-image Album)
+            images_bytes = []
+            if images:
+                for img_id in images:
+                    if img_id == "ignored":
+                        continue
+                    file_in_memory = BytesIO()
+                    await callback.bot.download(img_id, destination=file_in_memory)
+                    images_bytes.append(file_in_memory.getvalue())
 
             response = await api_client.send_message(
                 callback.from_user.id, 
                 text=caption, 
-                image_bytes=image_bytes,
+                images_bytes=images_bytes,
                 route=route
             )
         

@@ -1,0 +1,4 @@
+root ::= thoughts findings impression
+thoughts ::= "🤔 Thoughts:\n" [^\n]+ ("\n" [^\n]+)* "\n\n"
+findings ::= "Findings:\n" [^\n]+ ("\n" [^\n]+)* "\n\n"
+impression ::= "Impression:\n" [^\n]+ ("\n" [^\n]+)*

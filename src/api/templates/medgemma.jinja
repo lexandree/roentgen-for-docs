@@ -1,0 +1,19 @@
+{% if messages[0]['role'] == 'system' %}
+  {% set sys_prompt = messages[0]['content'] %}
+  {% set iter_messages = messages[1:] %}
+{% else %}
+  {% set sys_prompt = '' %}
+  {% set iter_messages = messages %}
+{% endif %}
+{% for message in iter_messages %}
+  {% if loop.index0 == 0 and sys_prompt != '' %}
+    {{ '<start_of_turn>user\nSystem Instruction (Do not repeat): ' + sys_prompt + '\n\nUser Query:\n' + message['content'] | trim + '<end_of_turn>\n' }}
+  {% elif message['role'] == 'user' %}
+    {{ '<start_of_turn>user\n' + message['content'] | trim + '<end_of_turn>\n' }}
+  {% elif message['role'] == 'assistant' or message['role'] == 'model' %}
+    {{ '<start_of_turn>model\n' + message['content'] | trim + '<end_of_turn>\n' }}
+  {% endif %}
+{% endfor %}
+{% if add_generation_prompt %}
+{{ '<start_of_turn>model\n' }}
+{% endif %}

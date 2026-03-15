@@ -66,7 +66,7 @@ async def set_session_route(data: dict, db: aiosqlite.Connection = Depends(get_d
 async def process_message(
     telegram_id: Annotated[int, Form()],
     text: Annotated[str | None, Form()] = None,
-    image: Annotated[UploadFile | None, File()] = None,
+    images: List[UploadFile] = File(default=[]),
     route: Annotated[str | None, Form()] = None,
     db: aiosqlite.Connection = Depends(get_db)
 ):
@@ -74,12 +74,12 @@ async def process_message(
     if not user_config or not user_config.get("is_active"):
         raise HTTPException(status_code=401, detail="User not in whitelist.")
 
-    if not text and not image:
+    if not text and not images:
         raise HTTPException(status_code=400, detail="Must provide text or image.")
 
     # We need to get or create the session first to resolve the route if it's omitted
-    # But if there's a new image, we clear the old session and its route anyway.
-    if image:
+    # But if there are new images, we clear the old session and its route anyway.
+    if images:
         await chat_manager.clear_session(telegram_id, db)
 
     # Determine default fallback route if none provided and no session exists
@@ -118,7 +118,7 @@ async def process_message(
         telegram_id=telegram_id,
         route=resolved_route,
         task_type="single",
-        images_count=1 if image else 0,
+        images_count=len(images),
         db=db
     )
 
@@ -127,17 +127,18 @@ async def process_message(
 
         # 1. Build current user message content
         current_content = []
-        if image:
-            if image.content_type not in ["image/jpeg", "image/png"]:
-                raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
-            file_content = await image.read()
-            image_b64 = base64.b64encode(file_content).decode('utf-8')
-            current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+        if images:
+            for image in images:
+                if image.content_type not in ["image/jpeg", "image/png"]:
+                    raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
+                file_content = await image.read()
+                image_b64 = base64.b64encode(file_content).decode('utf-8')
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:{image.content_type};base64,{image_b64}"}})
             await chat_manager.set_active_image(session_id, True, db)
         
         if text:
             current_content.append({"type": "text", "text": text})
-        elif not image:
+        elif not images:
             current_content.append({"type": "text", "text": "Please continue."})
 
         # Save current user message to DB as JSON string
@@ -169,7 +170,7 @@ async def process_message(
 
         # 3. Dispatch full messages array to worker
         # The worker now returns a structure that might include telemetry
-        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, resolved_route)
+        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, resolved_route, system_prompt_type)
 
         # Handle both legacy string response and new dict response with telemetry        
         if isinstance(worker_response, dict):

@@ -16,7 +16,14 @@ http_client = httpx.AsyncClient(timeout=300.0)
 
 class ChatManager:
 
-    async def dispatch_inference_to_worker(self, messages: list, system_prompt_text: str | None = None, route: str = "local_python") -> str:
+    # Load GBNF grammar once at module/class level to avoid reading file on every request
+    try:
+        with open("src/api/grammar/report.gbnf", "r") as f:
+            GBNF_GRAMMAR = f.read()
+    except Exception:
+        GBNF_GRAMMAR = None
+
+    async def dispatch_inference_to_worker(self, messages: list, system_prompt_text: str | None = None, route: str = "local_python", system_prompt_type: int = 1) -> str:
         """
         Selects a worker and sends the full OpenAI-style messages array.
         Supports both custom python worker (/infer) and OpenAI-compatible endpoints (/v1/chat/completions).
@@ -34,7 +41,8 @@ class ChatManager:
         if not worker_url:
             raise ValueError(f"No valid URL found for route {route}.")
 
-        if not system_prompt_text:            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
+        if not system_prompt_text:
+            system_prompt_text = "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
 
         # Determine worker type based on URL
         if worker_url.endswith("/v1/chat/completions"):
@@ -44,70 +52,24 @@ class ChatManager:
             import copy
             final_messages = copy.deepcopy(messages)
             
-            # For strict chat templates (like Gemma), the system prompt often causes Jinja errors
-            # if sent as a separate role because the template expects strict user/assistant alternation.
-            # We squash the system prompt into the first user message.
-            if final_messages and final_messages[0]["role"] == "user":
-                first_msg_content = final_messages[0]["content"]
-                
-                # Format system prompt to be less visible as a meta-instruction
-                injected_sys_prompt = f"System Instruction (Do not output or repeat this): {system_prompt_text}"
-                
-                if isinstance(first_msg_content, list):
-                    # Multimodal content
-                    text_found = False
-                    for part in first_msg_content:
-                        if part["type"] == "text":
-                            part["text"] = f"{injected_sys_prompt}\n\nUser query:\n{part['text']}"
-                            text_found = True
-                            break
-                    if not text_found:
-                        first_msg_content.append({"type": "text", "text": f"{injected_sys_prompt}"})
-                else:
-                    # String content
-                    final_messages[0]["content"] = f"{injected_sys_prompt}\n\nUser query:\n{first_msg_content}"
-            elif final_messages and final_messages[0]["role"] != "system":
-                # Fallback if history is weird and first message is not user
-                final_messages.insert(0, {"role": "user", "content": f"System Instruction: {system_prompt_text}\n\nPlease continue."})
+            # Since we now use a custom `medgemma.jinja` template, we no longer need to hack 
+            # the system prompt into the first user message. The template handles the "system" role.
+            final_messages.insert(0, {"role": "system", "content": system_prompt_text})
 
-            # Gemma jinja template STRICTLY requires alternating user -> assistant -> user
-            # We must ensure there are no two users or two assistants in a row, and no system roles.
-            cleaned_alternating_messages = []
-            expected_role = "user"
-            
-            for msg in final_messages:
-                if msg["role"] == "system":
-                    continue # Skip any stray system roles
-                
-                # Treat 'model' as 'assistant' to satisfy the Jinja template's literal string check
-                current_role = "assistant" if msg["role"] == "model" else msg["role"]
-                
-                if current_role == expected_role:
-                    cleaned_alternating_messages.append({"role": current_role, "content": msg["content"]})
-                    expected_role = "assistant" if current_role == "user" else "user"
-                else:
-                    # If we get two users in a row, or two assistants in a row, we merge their content
-                    # to maintain the strict alternation required by Gemma.
-                    if cleaned_alternating_messages:
-                        prev_msg = cleaned_alternating_messages[-1]
-                        
-                        # Merge content
-                        if isinstance(prev_msg["content"], str) and isinstance(msg["content"], str):
-                            prev_msg["content"] += f"\n\n{msg['content']}"
-                        elif isinstance(prev_msg["content"], list) and isinstance(msg["content"], list):
-                            prev_msg["content"].extend(msg["content"])
-                        elif isinstance(prev_msg["content"], list) and isinstance(msg["content"], str):
-                            prev_msg["content"].append({"type": "text", "text": msg["content"]})
-                        elif isinstance(prev_msg["content"], str) and isinstance(msg["content"], list):
-                            new_content = [{"type": "text", "text": prev_msg["content"]}]
-                            new_content.extend(msg["content"])
-                            prev_msg["content"] = new_content
+            # Calculate dedicated slot ID based on user type to maximize KV cache hits without flushing.
+            # Example: type 1 -> slot 0, type 2 -> slot 1, etc.
+            # We assume a `-np 3` server setup.
+            id_slot = (system_prompt_type - 1) % 3
 
             payload = {
-                "messages": cleaned_alternating_messages,
+                "messages": final_messages,
                 "temperature": 0.0, # Deterministic medical answers
-                "max_tokens": settings.llama_max_tokens
+                "max_tokens": settings.llama_max_tokens,
+                "id_slot": id_slot,
+                "cache_prompt": True
             }
+            if self.GBNF_GRAMMAR:
+                payload["grammar"] = self.GBNF_GRAMMAR
         else:
             # Our custom Python worker (/infer) handles the system prompt array injection natively
             system_prompt = {
