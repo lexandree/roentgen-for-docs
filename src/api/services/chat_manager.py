@@ -12,7 +12,7 @@ from src.api.config import settings
 # A single, reusable httpx client for performance
 # It's important to manage the client's lifecycle in a real FastAPI app (e.g., with lifespan events)
 # but for this service, a module-level client is sufficient.
-http_client = httpx.AsyncClient(timeout=300.0)
+http_client = httpx.AsyncClient(timeout=600.0)
 
 class ChatManager:
 
