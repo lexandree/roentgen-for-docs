@@ -128,11 +128,16 @@ async def process_message(
         # 1. Build current user message content
         current_content = []
         if images:
-            for image in images:
+            for i, image in enumerate(images):
                 if image.content_type not in ["image/jpeg", "image/png"]:
                     raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
                 file_content = await image.read()
                 image_b64 = base64.b64encode(file_content).decode('utf-8')
+                
+                # Explicitly label images if there is more than one, to help the model with "Before/After" comparisons
+                if len(images) > 1:
+                    current_content.append({"type": "text", "text": f"Image {i + 1}:"})
+                    
                 current_content.append({"type": "image_url", "image_url": {"url": f"data:{image.content_type};base64,{image_b64}"}})
             await chat_manager.set_active_image(session_id, True, db)
         
