@@ -84,14 +84,20 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             # If we are already collecting an album, and it's the SAME album, append
             if data.get("media_group_id") == message.media_group_id:
                 images = data.get("images", [])
-                images.append(message.document.file_id)
-                await state.update_data(images=images)
+                # Store with msg_id to ensure correct sorting later, as async arrival can be out of order
+                images.append({"msg_id": message.message_id, "file_id": message.document.file_id})
+                
+                caption = data.get("caption") or ""
+                if not caption and message.caption:
+                    caption = message.caption
+                    
+                await state.update_data(images=images, caption=caption)
                 return # Don't send a keyboard yet, wait for the task to finish
                 
             # If it's a NEW album, reset state
             await state.clear()
             await state.update_data(
-                images=[message.document.file_id],
+                images=[{"msg_id": message.message_id, "file_id": message.document.file_id}],
                 media_group_id=message.media_group_id,
                 caption=message.caption or "",
                 is_batch_upload=False # Flag to indicate this is a local multi-image, not a cloud batch
@@ -110,7 +116,7 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             # Single image submission
             await state.clear()
             await state.update_data(
-                images=[message.document.file_id],
+                images=[{"msg_id": message.message_id, "file_id": message.document.file_id}],
                 caption=message.caption or "",
                 is_batch_upload=False
             )

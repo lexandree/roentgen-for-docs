@@ -128,7 +128,16 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     route = callback.data.replace("route_", "")
     data = await state.get_data()
     file_id = data.get("file_id")
-    images = data.get("images", [])
+    images_raw = data.get("images", [])
+    
+    # Process images: sort by message_id if available to maintain original album order
+    images = []
+    if images_raw and isinstance(images_raw[0], dict):
+        images_raw.sort(key=lambda x: x.get("msg_id", 0))
+        images = [img["file_id"] for img in images_raw]
+    else:
+        images = images_raw # Legacy fallback
+
     caption = data.get("caption")
     is_text_only = data.get("is_text_only_route_switch", False)
     is_batch_upload = data.get("is_batch_upload", True) # Default True for legacy compatibility
@@ -190,10 +199,21 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
         await callback.answer()
 
 @router.message()
-async def handle_unsupported_message(message: types.Message):
+async def handle_unsupported_message(message: types.Message, state: FSMContext):
     if not auth_service.is_user_whitelisted(message.from_user.id):
         return
         
+    current_state = await state.get_state()
+    if current_state == AnalysisSession.waiting_for_route:
+        # If user sends text while waiting for route, treat it as a caption update
+        data = await state.get_data()
+        if not data.get("is_text_only_route_switch"):
+            caption = data.get("caption") or ""
+            new_caption = f"{caption}\n{message.text}".strip() if caption else message.text
+            await state.update_data(caption=new_caption)
+            await message.answer("Context added to the images. Please select a processing route from the menu above to begin analysis.")
+            return
+
     if message.text:
         # Handle text as normal
         # Indicate processing
