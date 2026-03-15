@@ -11,7 +11,7 @@ class BotSettings(BaseSettings):
     google_drive_credentials_json: Optional[str] = None
     google_drive_credentials_file_path: Optional[str] = "gdrive_credentials.json"
     whitelist_file_id: str | None = None
-    request_timeout: float = 600.0  # Default to 10 minutes for slow local inference, especially with multiple images
+    request_timeout: float = 300.0  # Default to 5 minutes. Override via REQUEST_TIMEOUT in bot.env if needed.
 
     @model_validator(mode='after')
     def load_gdrive_credentials(self) -> 'BotSettings':

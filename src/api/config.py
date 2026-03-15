@@ -12,7 +12,7 @@ class APISettings(BaseSettings):
     whitelist_file_id: Optional[str] = None
     gdrive_batch_folder_id: Optional[str] = None
     db_path: str = "sqlite+aiosqlite:///local_data.db"
-    request_timeout: float = 600.0
+    request_timeout: float = 300.0
     session_timeout_seconds: int = 3600  # Default 1 hour
     
     # Llama.cpp Inference Settings
