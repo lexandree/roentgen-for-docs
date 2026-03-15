@@ -53,7 +53,7 @@ class APIClient:
                 logger.error(f"Failed to set session route: {e}")
                 return False
 
-    async def send_message(self, telegram_id: int, text: str | None = None, images_bytes: list[bytes] | None = None, route: str | None = None) -> str:
+    async def send_message(self, telegram_id: int, text: str | None = None, images_bytes: list[tuple[str, bytes]] | None = None, route: str | None = None) -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             data = {
                 "telegram_id": telegram_id
@@ -65,8 +65,8 @@ class APIClient:
             
             files = []
             if images_bytes:
-                for i, img_bytes in enumerate(images_bytes):
-                    files.append(("images", (f"image_{i}.jpg", img_bytes, "image/jpeg")))
+                for file_name, img_bytes in images_bytes:
+                    files.append(("images", (file_name, img_bytes, "image/jpeg")))
 
             try:
                 response = await client.post(f"{self.base_url}/chat/message", data=data, files=files)
