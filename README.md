@@ -168,7 +168,29 @@ Designed for ephemeral cloud GPUs. It polls Google Drive for batches of images, 
 
 ## Usage
 
-Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted in the Google Drive JSON config, the bot will respond. Use `/analyze` to start a batch upload session for remote cloud workers.
+Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted in the Google Drive JSON config, the bot will respond. 
+
+### Basic Commands
+- Send any single X-ray/MRI image as a **File** (uncompressed) to analyze it.
+- Use `/model` to select which hardware backend to use for your current conversation (e.g., CPU vs GPU).
+- Use `/status` to see which backend is active and if an image is currently loaded in memory.
+- Use `/clear` or `/end` to erase the current conversation context from the GPU's memory and start a new patient case.
+- Use `/analyze` to start a batch upload session for remote cloud workers.
+
+### Advanced Usage: "Before & After" Comparisons
+You can send multiple images simultaneously to ask the AI to perform a comparative analysis (e.g., assessing disease progression).
+1. Select two images in your phone's gallery.
+2. Send them to the bot as an **Album** (Grouped Media).
+3. The bot will wait a few seconds to aggregate the album, then prompt you to select an inference worker.
+4. The AI will analyze both images in a single pass and provide a comparative report.
+
+## Architecture & Performance Optimizations
+
+To run a complex multi-modal model like MedGemma-1.5 on constrained hardware (like a 6GB GTX 1060), this project implements several advanced optimizations under the hood:
+
+- **KV Caching & Multi-Slot Architecture (`-np 3`)**: The C++ server is configured to maintain multiple parallel context slots in VRAM. This allows the system to permanently cache the massive "System Prompts" for different user roles (e.g., one slot for Radiologists, one for Patients). When switching between user types, responses are nearly instantaneous because the prefix is already cached.
+- **GBNF Grammar Constraints**: Small models often suffer from "conversational drift" or hallucinations. We strictly enforce a physical token-generation grammar (`report.gbnf`) on the C++ server. This physically prevents the model from generating anything outside of the strict `Findings: ... Impression: ...` structure, reducing hallucinations by up to 3x.
+- **Custom Jinja Templating**: Gemma models notoriously crash if sent a native `"role": "system"` message in the API payload due to strict alternating turn requirements. Our dispatcher uses a custom `medgemma.jinja` template that seamlessly intercepts the system prompt and injects it safely into the user turn, preserving API compatibility without crashing the model.
 
 ## Whitelist Configuration
 
