@@ -136,7 +136,8 @@ async def process_message(
                 
                 # Explicitly label images if there is more than one, to help the model with "Before/After" comparisons
                 if len(images) > 1:
-                    current_content.append({"type": "text", "text": f"Image {i + 1}:"})
+                    display_name = image.filename if image.filename and not image.filename.startswith("image_") else f"Image {i + 1}"
+                    current_content.append({"type": "text", "text": f"{display_name}:"})
                     
                 current_content.append({"type": "image_url", "image_url": {"url": f"data:{image.content_type};base64,{image_b64}"}})
             await chat_manager.set_active_image(session_id, True, db)

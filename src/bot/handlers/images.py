@@ -85,7 +85,11 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             if data.get("media_group_id") == message.media_group_id:
                 images = data.get("images", [])
                 # Store with msg_id to ensure correct sorting later, as async arrival can be out of order
-                images.append({"msg_id": message.message_id, "file_id": message.document.file_id})
+                images.append({
+                    "msg_id": message.message_id, 
+                    "file_id": message.document.file_id,
+                    "file_name": message.document.file_name
+                })
                 
                 caption = data.get("caption") or ""
                 if not caption and message.caption:
@@ -97,7 +101,11 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             # If it's a NEW album, reset state
             await state.clear()
             await state.update_data(
-                images=[{"msg_id": message.message_id, "file_id": message.document.file_id}],
+                images=[{
+                    "msg_id": message.message_id, 
+                    "file_id": message.document.file_id,
+                    "file_name": message.document.file_name
+                }],
                 media_group_id=message.media_group_id,
                 caption=message.caption or "",
                 is_batch_upload=False # Flag to indicate this is a local multi-image, not a cloud batch
@@ -116,7 +124,11 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
             # Single image submission
             await state.clear()
             await state.update_data(
-                images=[{"msg_id": message.message_id, "file_id": message.document.file_id}],
+                images=[{
+                    "msg_id": message.message_id, 
+                    "file_id": message.document.file_id,
+                    "file_name": message.document.file_name
+                }],
                 caption=message.caption or "",
                 is_batch_upload=False
             )

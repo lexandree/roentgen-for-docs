@@ -134,9 +134,9 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     images = []
     if images_raw and isinstance(images_raw[0], dict):
         images_raw.sort(key=lambda x: x.get("msg_id", 0))
-        images = [img["file_id"] for img in images_raw]
+        images = [{"file_id": img["file_id"], "file_name": img.get("file_name")} for img in images_raw]
     else:
-        images = images_raw # Legacy fallback
+        images = [{"file_id": img_id, "file_name": None} for img_id in images_raw] # Legacy fallback
 
     caption = data.get("caption")
     is_text_only = data.get("is_text_only_route_switch", False)
@@ -161,7 +161,8 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
         if is_batch_upload and (len(images) > 1 or (not file_id and images)):
             # Cloud Batch processing
             images_bytes = []
-            for img_id in images:
+            for img_data in images:
+                img_id = img_data["file_id"]
                 if img_id == "ignored":
                     continue
                 file_in_memory = BytesIO()
@@ -178,12 +179,14 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
             # Local processing (Single or Multi-image Album)
             images_bytes = []
             if images:
-                for img_id in images:
+                for i, img_data in enumerate(images):
+                    img_id = img_data["file_id"]
+                    file_name = img_data["file_name"] or f"image_{i+1}.jpg"
                     if img_id == "ignored":
                         continue
                     file_in_memory = BytesIO()
                     await callback.bot.download(img_id, destination=file_in_memory)
-                    images_bytes.append(file_in_memory.getvalue())
+                    images_bytes.append((file_name, file_in_memory.getvalue()))
 
             response = await api_client.send_message(
                 callback.from_user.id, 
