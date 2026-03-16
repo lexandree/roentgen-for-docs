@@ -6,6 +6,7 @@ import base64
 from src.api.db.database import get_db
 from src.api.services.auth import auth_service
 from src.api.services.chat_manager import chat_manager
+from src.api.services.image_processor import image_processor
 from src.api.config import settings
 from src.shared.services.gdrive_storage import GDriveStorageService
 
@@ -68,6 +69,7 @@ async def process_message(
     text: Annotated[str | None, Form()] = None,
     images: List[UploadFile] = File(default=[]),
     route: Annotated[str | None, Form()] = None,
+    roi_preset: Annotated[str | None, Form()] = None,
     db: aiosqlite.Connection = Depends(get_db)
 ):
     user_config = await auth_service.get_user_config(telegram_id, db)
@@ -132,18 +134,46 @@ async def process_message(
         # 1. Build current user message content
         current_content = []
         if images:
-            for i, image in enumerate(images):
+            if roi_preset and len(images) == 1:
+                # Two-Image ROI Strategy
+                image = images[0]
                 if image.content_type not in ["image/jpeg", "image/png"]:
                     raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
                 file_content = await image.read()
-                image_b64 = base64.b64encode(file_content).decode('utf-8')
                 
-                # Explicitly label images if there is more than one, to help the model with "Before/After" comparisons
-                if len(images) > 1:
-                    display_name = image.filename if image.filename and not image.filename.startswith("image_") else f"Image {i + 1}"
-                    current_content.append({"type": "text", "text": f"{display_name}:"})
+                main_img_bytes = image_processor.process_main_image(file_content)
+                roi_img_bytes = image_processor.process_roi_image(file_content, roi_preset)
+                
+                main_b64 = base64.b64encode(main_img_bytes).decode('utf-8')
+                roi_b64 = base64.b64encode(roi_img_bytes).decode('utf-8')
+                
+                # Add images to content
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{main_b64}"}})
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{roi_b64}"}})
+                
+                # Inject automatic explanation
+                roi_name_clean = roi_preset.replace("_", " ")
+                auto_prompt = f"[System: Image 1 is the full overview. Image 2 is a zoomed-in detail of the {roi_name_clean}.]"
+                current_content.append({"type": "text", "text": auto_prompt})
+                
+            else:
+                for i, image in enumerate(images):
+                    if image.content_type not in ["image/jpeg", "image/png"]:
+                        raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
+                    file_content = await image.read()
                     
-                current_content.append({"type": "image_url", "image_url": {"url": f"data:{image.content_type};base64,{image_b64}"}})
+                    # Pre-process image to a square if it's a single upload without ROI,
+                    # or batch images, to avoid distortion on the worker side
+                    processed_bytes = image_processor.process_main_image(file_content)
+                    image_b64 = base64.b64encode(processed_bytes).decode('utf-8')
+                    
+                    # Explicitly label images if there is more than one, to help the model with "Before/After" comparisons
+                    if len(images) > 1:
+                        display_name = image.filename if image.filename and not image.filename.startswith("image_") else f"Image {i + 1}"
+                        current_content.append({"type": "text", "text": f"{display_name}:"})
+                        
+                    current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+            
             await chat_manager.set_active_image(session_id, True, db)
         
         if text:

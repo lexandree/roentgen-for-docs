@@ -234,6 +234,26 @@ async def cmd_refresh_whitelist(message: types.Message):
     auth_service.sync_whitelist()
     await message.answer("Whitelist has been refreshed from Google Drive.")
 
+@router.callback_query(AnalysisSession.waiting_for_roi, F.data.startswith("roi_"))
+async def process_roi_selection(callback: types.CallbackQuery, state: FSMContext):
+    if not auth_service.is_user_whitelisted(callback.from_user.id):
+        await callback.answer("Unauthorized", show_alert=True)
+        return
+
+    roi_preset = callback.data.replace("roi_", "")
+    # Treat "none" as no preset
+    if roi_preset == "none":
+        roi_preset = None
+        
+    await state.update_data(roi_preset=roi_preset)
+    await state.set_state(AnalysisSession.waiting_for_route)
+    
+    from src.bot.handlers.images import get_dynamic_keyboard
+    keyboard = await get_dynamic_keyboard()
+    
+    await callback.message.edit_text("Please select a processing route:", reply_markup=keyboard)
+    await callback.answer()
+
 @router.callback_query(AnalysisSession.waiting_for_route, F.data.startswith("route_"))
 async def process_route_selection(callback: types.CallbackQuery, state: FSMContext):
     if not auth_service.is_user_whitelisted(callback.from_user.id):
@@ -244,6 +264,7 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
     data = await state.get_data()
     file_id = data.get("file_id")
     images_raw = data.get("images", [])
+    roi_preset = data.get("roi_preset")
     
     # Process images: sort by message_id if available to maintain original album order
     images = []
@@ -307,7 +328,8 @@ async def process_route_selection(callback: types.CallbackQuery, state: FSMConte
                 callback.from_user.id, 
                 text=caption, 
                 images_bytes=images_bytes,
-                route=route
+                route=route,
+                roi_preset=roi_preset
             )
         
         await callback.message.answer(response)

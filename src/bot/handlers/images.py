@@ -30,6 +30,19 @@ async def get_dynamic_keyboard():
         builder.adjust(1)
         return builder.as_markup()
 
+def get_roi_keyboard():
+    """Builds a keyboard for Region of Interest (ROI) selection."""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔍 Analyze Full Image", callback_data="roi_none")
+    builder.button(text="↖️ Top Left", callback_data="roi_top_left")
+    builder.button(text="↗️ Top Right", callback_data="roi_top_right")
+    builder.button(text="⏺ Center", callback_data="roi_center")
+    builder.button(text="↙️ Bottom Left", callback_data="roi_bottom_left")
+    builder.button(text="↘️ Bottom Right", callback_data="roi_bottom_right")
+    # Adjust layout: 1 full width, then 2 buttons per row, then 2 buttons
+    builder.adjust(1, 2, 1, 2)
+    return builder.as_markup()
+
 async def process_album_after_delay(group_id: str, bot: Bot):
     await asyncio.sleep(3.0)
     if group_id not in media_groups:
@@ -117,11 +130,11 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
                 caption=message.caption or "",
                 is_batch_upload=False
             )
-            await state.set_state(AnalysisSession.waiting_for_route)
+            await state.set_state(AnalysisSession.waiting_for_roi)
             
-            keyboard = await get_dynamic_keyboard()
+            keyboard = get_roi_keyboard()
             await message.answer(
-                "Image received (uncompressed). Please select an analysis route:",
+                "Image received (uncompressed). Select an area to focus on, or analyze the full image:",
                 reply_markup=keyboard
             )
     else:

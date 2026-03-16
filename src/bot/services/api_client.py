@@ -93,7 +93,7 @@ class APIClient:
                 logger.error(f"Failed to set session route: {e}")
                 return False
 
-    async def send_message(self, telegram_id: int, text: str | None = None, images_bytes: list[tuple[str, bytes]] | None = None, route: str | None = None) -> str:
+    async def send_message(self, telegram_id: int, text: str | None = None, images_bytes: list[tuple[str, bytes]] | None = None, route: str | None = None, roi_preset: str | None = None) -> str:
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             data = {
                 "telegram_id": telegram_id
@@ -102,6 +102,8 @@ class APIClient:
                 data["route"] = route
             if text:
                 data["text"] = text
+            if roi_preset:
+                data["roi_preset"] = roi_preset
             
             files = []
             if images_bytes:
