@@ -9,7 +9,7 @@ from typing import Dict
 
 router = Router()
 
-album_tasks: Dict[int, asyncio.Task] = {}
+media_groups: Dict[str, dict] = {}
 
 async def get_dynamic_keyboard():
     """Fetches available routes from the API and builds a keyboard."""
@@ -30,27 +30,34 @@ async def get_dynamic_keyboard():
         builder.adjust(1)
         return builder.as_markup()
 
-async def process_album_after_delay(chat_id: int, user_id: int, state: FSMContext, bot: Bot):
-    await asyncio.sleep(5.0)
-    data = await state.get_data()
-    images = data.get("images", [])
+async def process_album_after_delay(group_id: str, bot: Bot):
+    await asyncio.sleep(3.0)
+    if group_id not in media_groups:
+        return
+        
+    group_data = media_groups.pop(group_id)
+    state: FSMContext = group_data["state"]
+    chat_id = group_data["chat_id"]
+    images = group_data["images"]
+    caption = group_data["caption"]
+    
     if not images:
         return
-    
-    # Transition to waiting for route, but with batch data
+        
+    await state.clear()
+    await state.update_data(
+        images=images,
+        caption=caption,
+        is_batch_upload=False
+    )
     await state.set_state(AnalysisSession.waiting_for_route)
     
     keyboard = await get_dynamic_keyboard()
-    
     await bot.send_message(
         chat_id=chat_id,
-        text=f"Received {len(images)} images (Batch). Please select a processing route:",
+        text=f"Received {len(images)} images (Album). Please select a processing route:",
         reply_markup=keyboard
     )
-    
-    # Cleanup task reference
-    if user_id in album_tasks:
-        del album_tasks[user_id]
 
 @router.message(F.photo)
 async def handle_compressed_photo(message: types.Message):
@@ -76,50 +83,28 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
         return
 
     if message.document.mime_type and message.document.mime_type.startswith('image/'):
-        # Check if this is part of an album
         if message.media_group_id:
-            # Get current state data
-            data = await state.get_data()
+            group_id = message.media_group_id
+            if group_id not in media_groups:
+                media_groups[group_id] = {
+                    "images": [],
+                    "caption": message.caption or "",
+                    "chat_id": message.chat.id,
+                    "user_id": message.from_user.id,
+                    "state": state
+                }
+                asyncio.create_task(process_album_after_delay(group_id, bot))
             
-            # If we are already collecting an album, and it's the SAME album, append
-            if data.get("media_group_id") == message.media_group_id:
-                images = data.get("images", [])
-                # Store with msg_id to ensure correct sorting later, as async arrival can be out of order
-                images.append({
-                    "msg_id": message.message_id, 
-                    "file_id": message.document.file_id,
-                    "file_name": message.document.file_name
-                })
-                
-                caption = data.get("caption") or ""
-                if not caption and message.caption:
-                    caption = message.caption
-                    
-                await state.update_data(images=images, caption=caption)
-                return # Don't send a keyboard yet, wait for the task to finish
-                
-            # If it's a NEW album, reset state
-            await state.clear()
-            await state.update_data(
-                images=[{
-                    "msg_id": message.message_id, 
-                    "file_id": message.document.file_id,
-                    "file_name": message.document.file_name
-                }],
-                media_group_id=message.media_group_id,
-                caption=message.caption or "",
-                is_batch_upload=False # Flag to indicate this is a local multi-image, not a cloud batch
-            )
-            await state.set_state(AnalysisSession.waiting_for_route)
+            media_groups[group_id]["images"].append({
+                "msg_id": message.message_id, 
+                "file_id": message.document.file_id,
+                "file_name": message.document.file_name
+            })
             
-            # Cancel any previous task for this user just in case
-            if message.from_user.id in album_tasks:
-                album_tasks[message.from_user.id].cancel()
+            if not media_groups[group_id]["caption"] and message.caption:
+                media_groups[group_id]["caption"] = message.caption
                 
-            # Start a delayed task to wait for the rest of the album
-            album_tasks[message.from_user.id] = asyncio.create_task(
-                process_album_after_delay(message.chat.id, message.from_user.id, state, bot)
-            )
+            return
         else:
             # Single image submission
             await state.clear()

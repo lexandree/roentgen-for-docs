@@ -78,9 +78,13 @@ async def process_message(
         raise HTTPException(status_code=400, detail="Must provide text or image.")
 
     # We need to get or create the session first to resolve the route if it's omitted
-    # But if there are new images, we clear the old session and its route anyway.
+    # But if there are new images, we clear the old session and its route anyway
+    # UNLESS the previous session only contained text (has_active_image is False).
     if images:
-        await chat_manager.clear_session(telegram_id, db)
+        cursor = await db.execute("SELECT has_active_image FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
+        row = await cursor.fetchone()
+        if row and row["has_active_image"]:
+            await chat_manager.clear_session(telegram_id, db)
 
     # Determine default fallback route if none provided and no session exists
     fallback_route = next(iter(settings.inference_workers.keys())) if settings.inference_workers else None
