@@ -92,3 +92,14 @@ class APIAuthService:
         return "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. Do NOT use disclaimers like 'I am an AI' or 'Consult a doctor'. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
 
 auth_service = APIAuthService()
+
+from fastapi import Depends, HTTPException
+import aiosqlite
+from src.api.db.database import get_db
+
+async def is_admin_user(telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT role FROM users WHERE telegram_id = ? AND is_active = 1", (telegram_id,))
+    row = await cursor.fetchone()
+    if not row or row["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required.")
+    return telegram_id

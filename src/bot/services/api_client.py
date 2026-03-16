@@ -43,6 +43,46 @@ class APIClient:
                 logger.error(f"Failed to fetch session info: {e}")
                 return {"active_session": False}
 
+    async def get_admin_status(self) -> dict:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/admin/status")
+                response.raise_for_status()
+                return response.json().get("data", {}).get("workers", {})
+            except Exception as e:
+                logger.error(f"Failed to fetch admin status: {e}")
+                return {}
+
+    async def get_admin_stats(self, period: str) -> dict:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/admin/stats", params={"period": period})
+                response.raise_for_status()
+                return response.json().get("data", {}).get("stats", {})
+            except Exception as e:
+                logger.error(f"Failed to fetch admin stats: {e}")
+                return {}
+
+    async def get_admin_user_stats(self, telegram_id: int) -> dict:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/admin/user_stats/{telegram_id}")
+                response.raise_for_status()
+                return response.json().get("data", {}).get("user_stats", {})
+            except Exception as e:
+                logger.error(f"Failed to fetch admin user stats: {e}")
+                return {}
+
+    async def get_admin_worker_stats(self, period: str) -> dict:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            try:
+                response = await client.get(f"{self.base_url}/admin/worker_stats", params={"period": period})
+                response.raise_for_status()
+                return response.json().get("data", {}).get("worker_stats", {})
+            except Exception as e:
+                logger.error(f"Failed to fetch admin worker stats: {e}")
+                return {}
+
     async def set_session_route(self, telegram_id: int, route: str) -> bool:
         """Explicitly sets the active worker route for the current session."""
         async with httpx.AsyncClient(timeout=5.0) as client:

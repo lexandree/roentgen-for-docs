@@ -1,5 +1,5 @@
 from aiogram import Router, types, F
-from aiogram.filters import Command
+from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
 from src.bot.services.auth import auth_service
 from src.bot.services.api_client import api_client
@@ -7,6 +7,121 @@ from src.bot.states import AnalysisSession
 from io import BytesIO
 
 router = Router()
+
+@router.message(Command("admin_status"))
+async def cmd_admin_status(message: types.Message):
+    user = auth_service.get_user(message.from_user.id)
+    if not user or user.get("role") != "admin":
+        return
+    
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    statuses = await api_client.get_admin_status()
+    
+    if not statuses:
+        await message.answer("⚠️ Failed to retrieve admin status.")
+        return
+        
+    response_lines = ["*Worker Application Health (Admin):*"]
+    for route_id, info in statuses.items():
+        name = info.get("name", route_id)
+        status = info.get("status", "unknown")
+        
+        if status == "online":
+            icon = "🟢"
+            latency = info.get("latency_ms", "N/A")
+            status_text = f"Online (Ping: {latency}ms)"
+        elif status == "serverless":
+            icon = "☁️"
+            status_text = f"Serverless"
+        else:
+            icon = "🔴"
+            status_text = f"Offline ({status})"
+            
+        response_lines.append(f"{icon} *{name}*: {status_text}")
+        
+    await message.answer("\n".join(response_lines), parse_mode="Markdown")
+
+@router.message(Command("admin_stats"))
+async def cmd_admin_stats(message: types.Message, command: CommandObject):
+    user = auth_service.get_user(message.from_user.id)
+    if not user or user.get("role") != "admin":
+        return
+        
+    period = command.args if command.args in ["daily", "weekly", "monthly", "all"] else "daily"
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
+    stats = await api_client.get_admin_stats(period)
+    if not stats:
+        await message.answer("⚠️ Failed to retrieve admin stats.")
+        return
+        
+    response = (
+        f"📊 *System Statistics ({period.capitalize()})*\n\n"
+        f"🔹 *Total Requests:* {stats.get('total_requests')}\n"
+        f"🔹 *Total Images:* {stats.get('total_images')}\n"
+        f"🔹 *Avg Latency:* {stats.get('avg_latency')}s\n\n"
+        f"📈 *Route Breakdown:*\n"
+    )
+    for route, count in stats.get("route_breakdown", {}).items():
+        response += f" - {route}: {count}\n"
+        
+    await message.answer(response, parse_mode="Markdown")
+
+@router.message(Command("admin_user_stats"))
+async def cmd_admin_user_stats(message: types.Message, command: CommandObject):
+    user = auth_service.get_user(message.from_user.id)
+    if not user or user.get("role") != "admin":
+        return
+        
+    if not command.args or not command.args.isdigit():
+        await message.answer("Please provide a valid numeric telegram_id: /admin_user_stats <id>")
+        return
+        
+    target_id = int(command.args)
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
+    stats = await api_client.get_admin_user_stats(target_id)
+    if not stats or stats.get("total_requests", 0) == 0:
+        await message.answer(f"⚠️ Failed to retrieve stats for user {target_id} or user has no activity.")
+        return
+        
+    response = (
+        f"👤 *User Statistics (ID: {target_id})*\n\n"
+        f"🔹 *Total Requests:* {stats.get('total_requests')}\n"
+        f"🔹 *Total Images:* {stats.get('total_images')}\n"
+        f"🔹 *Avg Latency:* {stats.get('avg_latency')}s\n"
+        f"⏱ *Session Duration:* {stats.get('session_duration_minutes')} mins\n"
+        f"🕒 *Last Activity:* {stats.get('last_activity')}\n"
+    )
+    await message.answer(response, parse_mode="Markdown")
+
+@router.message(Command("admin_worker_stats"))
+async def cmd_admin_worker_stats(message: types.Message, command: CommandObject):
+    user = auth_service.get_user(message.from_user.id)
+    if not user or user.get("role") != "admin":
+        return
+        
+    period = command.args if command.args in ["daily", "weekly", "monthly", "all"] else "daily"
+    await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
+    
+    stats = await api_client.get_admin_worker_stats(period)
+    if not stats:
+        await message.answer("⚠️ Failed to retrieve admin worker stats or no activity logged.")
+        return
+        
+    response = f"🖥 *Worker Usage & Cost Metrics ({period.capitalize()})*\n\n"
+    
+    for route, r_stats in stats.items():
+        response += (
+            f"🔹 *Worker:* `{route}`\n"
+            f"  • Requests: {r_stats.get('total_requests')}\n"
+            f"  • Images: {r_stats.get('total_images')}\n"
+            f"  • Input Tokens: {r_stats.get('total_input_tokens')}\n"
+            f"  • Output Tokens: {r_stats.get('total_output_tokens')}\n"
+            f"  • Avg Latency: {r_stats.get('avg_latency')}s\n\n"
+        )
+        
+    await message.answer(response, parse_mode="Markdown")
 
 @router.message(Command("start"))
 async def cmd_start(message: types.Message):

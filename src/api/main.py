@@ -5,6 +5,7 @@ import logging
 from src.api.db.database import init_db, get_db
 from src.api.services.auth import auth_service
 from src.api.routes.chat import router as chat_router
+from src.api.routes.admin import router as admin_router
 from src.api.workers.session_cleaner import session_cleaner
 
 logging.basicConfig(level=logging.INFO)
@@ -24,6 +25,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="MedGemma Local API", lifespan=lifespan)
 app.include_router(chat_router)
+app.include_router(admin_router)
 
 @app.get("/health")
 async def health_check():

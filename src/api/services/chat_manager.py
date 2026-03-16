@@ -300,4 +300,172 @@ class ChatManager:
                 
         return statuses
 
+    async def ping_workers(self) -> dict:
+        import time
+        from urllib.parse import urlparse
+        statuses = {}
+        for route_id, config in settings.inference_workers.items():
+            url = config.get("url")
+            name = config.get("name", route_id)
+            
+            if not url:
+                statuses[route_id] = {"name": name, "status": "offline", "reason": "No URL"}
+                continue
+                
+            parsed = urlparse(url)
+            base_url = f"{parsed.scheme}://{parsed.netloc}/health"
+            
+            start_time = time.time()
+            try:
+                response = await http_client.get(base_url, timeout=3.0)
+                latency = round((time.time() - start_time) * 1000, 2)
+                statuses[route_id] = {"name": name, "status": "online", "latency_ms": latency}
+            except httpx.TimeoutException:
+                statuses[route_id] = {"name": name, "status": "timeout"}
+            except httpx.RequestError:
+                statuses[route_id] = {"name": name, "status": "offline"}
+            except Exception as e:
+                statuses[route_id] = {"name": name, "status": "error"}
+                
+        return statuses
+
+    async def get_system_stats(self, db, period: str = "daily") -> dict:
+        time_modifier = "-1 day"
+        if period == "weekly":
+            time_modifier = "-7 days"
+        elif period == "monthly":
+            time_modifier = "-1 month"
+        elif period == "all":
+            time_modifier = "-100 years"
+        
+        query = """
+            SELECT 
+                COUNT(*) as total_requests,
+                SUM(images_count) as total_images,
+                AVG(latency) as avg_latency
+            FROM interaction_logs
+            WHERE created_at >= datetime('now', ?) AND status = 'completed'
+        """
+        cursor = await db.execute(query, (time_modifier,))
+        row = await cursor.fetchone()
+        
+        stats = {
+            "total_requests": row["total_requests"] or 0,
+            "total_images": row["total_images"] or 0,
+            "avg_latency": round(row["avg_latency"] or 0.0, 2)
+        }
+        
+        route_query = """
+            SELECT route, COUNT(*) as count
+            FROM interaction_logs
+            WHERE created_at >= datetime('now', ?) AND status = 'completed'
+            GROUP BY route
+        """
+        cursor = await db.execute(route_query, (time_modifier,))
+        routes = await cursor.fetchall()
+        stats["route_breakdown"] = {r["route"]: r["count"] for r in routes}
+        
+        return stats
+
+    async def get_user_stats(self, db, telegram_id: int) -> dict:
+        query = """
+            SELECT 
+                COUNT(*) as total_requests,
+                SUM(images_count) as total_images,
+                AVG(latency) as avg_latency,
+                MAX(created_at) as last_activity
+            FROM interaction_logs
+            WHERE telegram_id = ? AND status = 'completed'
+        """
+        cursor = await db.execute(query, (telegram_id,))
+        row = await cursor.fetchone()
+        
+        stats = {
+            "telegram_id": telegram_id,
+            "total_requests": row["total_requests"] or 0,
+            "total_images": row["total_images"] or 0,
+            "avg_latency": round(row["avg_latency"] or 0.0, 2),
+            "last_activity": row["last_activity"],
+            "session_duration_minutes": 0.0
+        }
+        
+        time_query = """
+            SELECT created_at
+            FROM interaction_logs
+            WHERE telegram_id = ?
+            ORDER BY created_at ASC
+        """
+        cursor = await db.execute(time_query, (telegram_id,))
+        rows = await cursor.fetchall()
+        
+        total_duration = 0.0
+        if rows:
+            from datetime import datetime
+            
+            last_time = None
+            session_start = None
+            
+            for r in rows:
+                dt_str = r["created_at"]
+                try:
+                    dt = datetime.fromisoformat(dt_str.replace('Z', '+00:00'))
+                except ValueError:
+                    dt = datetime.strptime(dt_str, "%Y-%m-%d %H:%M:%S")
+                    
+                if last_time is None:
+                    last_time = dt
+                    session_start = dt
+                    continue
+                    
+                diff = (dt - last_time).total_seconds()
+                
+                # Gap of > 30 mins means a new session
+                if diff > 30 * 60:
+                    total_duration += (last_time - session_start).total_seconds()
+                    session_start = dt
+                
+                last_time = dt
+                
+            if session_start and last_time and last_time > session_start:
+                total_duration += (last_time - session_start).total_seconds()
+                
+        stats["session_duration_minutes"] = round(total_duration / 60.0, 2)
+            
+        return stats
+
+    async def get_worker_stats(self, db, period: str = "daily") -> dict:
+        time_modifier = "-1 day"
+        if period == "weekly":
+            time_modifier = "-7 days"
+        elif period == "monthly":
+            time_modifier = "-1 month"
+        elif period == "all":
+            time_modifier = "-100 years"
+            
+        query = """
+            SELECT 
+                route,
+                COUNT(*) as total_requests,
+                SUM(images_count) as total_images,
+                SUM(input_tokens) as total_input_tokens,
+                SUM(output_tokens) as total_output_tokens,
+                AVG(latency) as avg_latency
+            FROM interaction_logs
+            WHERE created_at >= datetime('now', ?) AND status = 'completed'
+            GROUP BY route
+        """
+        cursor = await db.execute(query, (time_modifier,))
+        rows = await cursor.fetchall()
+        
+        stats = {}
+        for row in rows:
+            stats[row["route"]] = {
+                "total_requests": row["total_requests"] or 0,
+                "total_images": row["total_images"] or 0,
+                "total_input_tokens": row["total_input_tokens"] or 0,
+                "total_output_tokens": row["total_output_tokens"] or 0,
+                "avg_latency": round(row["avg_latency"] or 0.0, 2)
+            }
+        return stats
+
 chat_manager = ChatManager()

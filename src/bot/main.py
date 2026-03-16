@@ -31,6 +31,10 @@ async def main():
         BotCommand(command="analyze", description="Start batch analysis mode"),
         BotCommand(command="clear", description="Clear context and VRAM memory"),
         BotCommand(command="end", description="End session (same as /clear)"),
+        BotCommand(command="admin_status", description="Admin: Worker Health Ping"),
+        BotCommand(command="admin_stats", description="Admin: System Usage Stats"),
+        BotCommand(command="admin_user_stats", description="Admin: User Activity & Session Duration"),
+        BotCommand(command="admin_worker_stats", description="Admin: Worker Usage & Token Metrics"),
     ])
 
     await dp.start_polling(bot)
