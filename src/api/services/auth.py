@@ -97,9 +97,9 @@ from fastapi import Depends, HTTPException
 import aiosqlite
 from src.api.db.database import get_db
 
-async def is_admin_user(telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
-    cursor = await db.execute("SELECT role FROM users WHERE telegram_id = ? AND is_active = 1", (telegram_id,))
+async def is_admin_user(admin_telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    cursor = await db.execute("SELECT role FROM users WHERE telegram_id = ? AND is_active = 1", (admin_telegram_id,))
     row = await cursor.fetchone()
     if not row or row["role"] != "admin":
         raise HTTPException(status_code=403, detail="Admin access required.")
-    return telegram_id
+    return admin_telegram_id

@@ -43,40 +43,40 @@ class APIClient:
                 logger.error(f"Failed to fetch session info: {e}")
                 return {"active_session": False}
 
-    async def get_admin_status(self) -> dict:
+    async def get_admin_status(self, admin_telegram_id: int) -> dict:
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                response = await client.get(f"{self.base_url}/admin/status")
+                response = await client.get(f"{self.base_url}/admin/status", params={"admin_telegram_id": admin_telegram_id})
                 response.raise_for_status()
                 return response.json().get("data", {}).get("workers", {})
             except Exception as e:
                 logger.error(f"Failed to fetch admin status: {e}")
                 return {}
 
-    async def get_admin_stats(self, period: str) -> dict:
+    async def get_admin_stats(self, admin_telegram_id: int, period: str) -> dict:
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
-                response = await client.get(f"{self.base_url}/admin/stats", params={"period": period})
+                response = await client.get(f"{self.base_url}/admin/stats", params={"admin_telegram_id": admin_telegram_id, "period": period})
                 response.raise_for_status()
                 return response.json().get("data", {}).get("stats", {})
             except Exception as e:
                 logger.error(f"Failed to fetch admin stats: {e}")
                 return {}
 
-    async def get_admin_user_stats(self, telegram_id: int) -> dict:
+    async def get_admin_user_stats(self, admin_telegram_id: int, target_telegram_id: int) -> dict:
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
-                response = await client.get(f"{self.base_url}/admin/user_stats/{telegram_id}")
+                response = await client.get(f"{self.base_url}/admin/user_stats/{target_telegram_id}", params={"admin_telegram_id": admin_telegram_id})
                 response.raise_for_status()
                 return response.json().get("data", {}).get("user_stats", {})
             except Exception as e:
                 logger.error(f"Failed to fetch admin user stats: {e}")
                 return {}
 
-    async def get_admin_worker_stats(self, period: str) -> dict:
+    async def get_admin_worker_stats(self, admin_telegram_id: int, period: str) -> dict:
         async with httpx.AsyncClient(timeout=15.0) as client:
             try:
-                response = await client.get(f"{self.base_url}/admin/worker_stats", params={"period": period})
+                response = await client.get(f"{self.base_url}/admin/worker_stats", params={"admin_telegram_id": admin_telegram_id, "period": period})
                 response.raise_for_status()
                 return response.json().get("data", {}).get("worker_stats", {})
             except Exception as e:

@@ -15,7 +15,7 @@ async def cmd_admin_status(message: types.Message):
         return
     
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
-    statuses = await api_client.get_admin_status()
+    statuses = await api_client.get_admin_status(message.from_user.id)
     
     if not statuses:
         await message.answer("⚠️ Failed to retrieve admin status.")
@@ -50,7 +50,7 @@ async def cmd_admin_stats(message: types.Message, command: CommandObject):
     period = command.args if command.args in ["daily", "weekly", "monthly", "all"] else "daily"
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     
-    stats = await api_client.get_admin_stats(period)
+    stats = await api_client.get_admin_stats(message.from_user.id, period)
     if not stats:
         await message.answer("⚠️ Failed to retrieve admin stats.")
         return
@@ -80,7 +80,7 @@ async def cmd_admin_user_stats(message: types.Message, command: CommandObject):
     target_id = int(command.args)
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     
-    stats = await api_client.get_admin_user_stats(target_id)
+    stats = await api_client.get_admin_user_stats(message.from_user.id, target_id)
     if not stats or stats.get("total_requests", 0) == 0:
         await message.answer(f"⚠️ Failed to retrieve stats for user {target_id} or user has no activity.")
         return
@@ -104,7 +104,7 @@ async def cmd_admin_worker_stats(message: types.Message, command: CommandObject)
     period = command.args if command.args in ["daily", "weekly", "monthly", "all"] else "daily"
     await message.bot.send_chat_action(chat_id=message.chat.id, action="typing")
     
-    stats = await api_client.get_admin_worker_stats(period)
+    stats = await api_client.get_admin_worker_stats(message.from_user.id, period)
     if not stats:
         await message.answer("⚠️ Failed to retrieve admin worker stats or no activity logged.")
         return
