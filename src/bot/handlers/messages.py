@@ -344,14 +344,24 @@ async def handle_unsupported_message(message: types.Message, state: FSMContext):
         return
         
     current_state = await state.get_state()
-    if current_state == AnalysisSession.waiting_for_route:
+    if current_state in (AnalysisSession.waiting_for_route, AnalysisSession.waiting_for_roi):
         # If user sends text while waiting for route, treat it as a caption update
         data = await state.get_data()
         if not data.get("is_text_only_route_switch"):
             caption = data.get("caption") or ""
             new_caption = f"{caption}\n{message.text}".strip() if caption else message.text
             await state.update_data(caption=new_caption)
-            await message.answer("Context added to the images. Please select a processing route from the menu above to begin analysis.")
+            await message.answer("Context added to the images. Please select an option from the menu above to proceed.")
+            return
+
+    if current_state == AnalysisSession.collecting_album:
+        data = await state.get_data()
+        group_id = data.get("current_media_group_id")
+        from src.bot.handlers.images import media_groups
+        if group_id and group_id in media_groups:
+            caption = media_groups[group_id].get("caption") or ""
+            media_groups[group_id]["caption"] = f"{caption}\n{message.text}".strip() if caption else message.text
+            # Silently append context to the gathering album
             return
 
     if message.text:

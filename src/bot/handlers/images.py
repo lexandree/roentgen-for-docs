@@ -106,6 +106,8 @@ async def handle_document(message: types.Message, state: FSMContext, bot: Bot):
                     "user_id": message.from_user.id,
                     "state": state
                 }
+                await state.set_state(AnalysisSession.collecting_album)
+                await state.update_data(current_media_group_id=group_id)
                 asyncio.create_task(process_album_after_delay(group_id, bot))
             
             media_groups[group_id]["images"].append({
