@@ -1,14 +1,15 @@
 # Roentgen for Docs - MedGemma Diagnostic Bot
 
-This project provides a secure, two-part system for medical image analysis using MedGemma. It consists of a local, GPU-powered backend for model inference and a cloud-hosted Telegram bot that acts as the user-facing interface. The two components are connected via a secure reverse SSH tunnel, ensuring that sensitive medical data remains on your local machine.
+This project provides a secure system for medical image analysis using MedGemma. It consists of a backend dispatcher, scalable inference workers, and a cloud-hosted Telegram bot that acts as the user-facing interface. The components are connected via a secure reverse SSH tunnel, ensuring that sensitive medical data remains private.
 
 ## Core Features
 
-- **Secure by Design**: Images and prompts are processed on your local server. The cloud-based bot only handles communication with Telegram.
+- **Secure by Design**: Images and prompts are processed on your dedicated server. The cloud-based bot only handles communication with Telegram.
 - **Strict Whitelisting**: Access is controlled via a dual-whitelist system (local database and a centrally-managed Google Drive file).
 - **Text and Image Analysis**: Users can engage in text-based medical discussions or upload X-ray/MRI images for diagnostic analysis.
+- **Advanced Image Preprocessing**: Built-in interactive Region of Interest (ROI) commands significantly improve analysis quality.
 - **Session Management**: Conversations are isolated per user, with automatic session clearing for privacy.
-- **Multi-Modal Interaction**: Users can upload an image at any point in a conversation to add visual context.
+- **Administration & Statistics**: Comprehensive built-in dashboard commands for admins to monitor health and usage.
 
 ## Project Structure
 
@@ -16,25 +17,29 @@ This project provides a secure, two-part system for medical image analysis using
 .
 ├── specs/              # Feature specifications and planning documents
 ├── src/
-│   ├── api/            # Local FastAPI backend (inference server/dispatcher)
+│   ├── api/            # FastAPI backend (dispatcher/routing)
 │   ├── bot/            # Cloud-hosted Telegram bot (aiogram)
 │   ├── shared/         # Shared services (Google Drive, whitelist)
-│   └── workers/        # Cloud batch processing adapters (Colab/Kaggle)
+│   └── workers/        # Cloud batch processing adapters (TODO)
 └── tests/              # Unit and integration tests
 ```
 
 ## System Setup
 
-This project requires two separate environments: a **Local Server** with GPU access for the model and a **Cloud Server** to run the public-facing Telegram bot.
+This project fundamentally relies on three logical components:
+1. **Cloud Server**: Runs the public-facing Telegram bot.
+2. **Dispatcher Server**: Runs the FastAPI backend, manages routing, DB logging, and session state. Does *not* require a GPU.
+3. **Inference Worker(s)**: Machines with GPU access running the actual ML model (e.g., `llama-server`).
 
-### 1. Local Server Setup (FastAPI Backend)
+*Note: The Dispatcher Server and Inference Worker can be hosted on the same physical machine.*
 
-This machine runs the MedGemma model and handles all AI processing.
+### 1. Dispatcher Server Setup (FastAPI)
+
+This machine routes traffic to the MedGemma model and handles all database logging.
 
 1.  **Prerequisites**:
-    - A Linux machine with a CUDA-compatible GPU.
+    - A Linux machine.
     - Python 3.12+ and Conda installed.
-    - MedGemma 1.5 model weights.
 
 2.  **Clone the Repository**:
     ```bash
@@ -60,12 +65,12 @@ This machine runs the MedGemma model and handles all AI processing.
 6.  **Initialize Database**:
     Run the script to set up the local database and add your Telegram user ID to the whitelist:
     ```bash
-    python src/api/scripts/init_db.py --add-user YOUR_TELEGRAM_ID --name "Your Name"
+    python src/api/scripts/init_db.py --add-user YOUR_TELEGRAM_ID --name "Your Name" --role "admin"
     ```
 
 ### 2. Cloud Server Setup (Telegram Bot)
 
-This machine runs the Telegram bot and forwards requests to your local server. A free-tier cloud instance (e.g., Oracle Cloud) is sufficient.
+This machine runs the Telegram bot and forwards requests to your dispatcher. A free-tier cloud instance is sufficient.
 
 1.  **Prerequisites**:
     - A cloud server with Python 3.12+.
@@ -89,13 +94,13 @@ This machine runs the Telegram bot and forwards requests to your local server. A
 ## Running the Application
 
 1.  **Start the Secure Tunnel**:
-    From your **Local Server**, open a reverse SSH tunnel to your cloud instance. This securely exposes your local API to the cloud bot.
+    From your **Dispatcher Server**, open a reverse SSH tunnel to your cloud instance. This securely exposes your API to the cloud bot.
     ```bash
     ssh -R 8000:localhost:8000 user@your-cloud-server-ip -N -f
     ```
 
-2.  **Start the Local API Server**:
-    On your **Local Server**, start the FastAPI application:
+2.  **Start the Dispatcher API Server**:
+    On your **Dispatcher Server**, start the FastAPI application:
     ```bash
     uvicorn src.api.main:app --host 127.0.0.1 --port 8000
     ```
@@ -106,91 +111,51 @@ This machine runs the Telegram bot and forwards requests to your local server. A
     python -m src.bot.main
     ```
 
-## Docker Deployment (Recommended for Cloud)
-
-For a streamlined setup on your cloud server (e.g., Oracle Cloud), you can use Docker and Docker Compose. This packages both the Dispatcher API and the Telegram Bot into isolated containers.
-
-### Prerequisites
-- Docker and Docker Compose installed on the host.
-- A `.env` file and `gdrive_credentials.json` in the project root.
-
-### Steps
-1.  **Prepare Configuration**: Ensure your `.env` file contains all necessary tokens and the `WHITELIST_FILE_ID`.
-2.  **Start Services**:
-    ```bash
-    docker-compose up -d --build
-    ```
-3.  **Logs**: Monitor output using `docker-compose logs -f`.
-
-## Minimalist Deployment (systemd - Alternative for < 1GB RAM)
-
-If you are running on a very limited VM (like Oracle Cloud `Micro` instance with 1GB RAM), it is recommended to use `systemd` to avoid Docker's memory overhead. We strongly recommend using **Ubuntu** instead of Oracle Linux to avoid SELinux and strict user directory permission issues.
-
-See the detailed guide and service files in [deployment/systemd/](deployment/systemd/).
-
-### Summary of Steps
-1.  **Setup Virtualenv**: Create a `venv` and install requirements. *Note: Use `src/api/requirements-dispatcher.txt` for the API to avoid compiling heavy ML libraries on the cloud server.*
-2.  **Configure Environment**: Create `api.env` and `bot.env` in the root folder with absolute paths to your credentials.
-3.  **Install Services**:
-    ```bash
-    sudo cp deployment/systemd/*.service /etc/systemd/system/
-    sudo systemctl daemon-reload
-    sudo systemctl enable roentgen-api roentgen-bot
-    sudo systemctl start roentgen-api roentgen-bot
-    ```
-
 ## Worker Infrastructure
 
-The system supports multiple worker types for model inference.
+The system supports multiple worker types for model inference, allowing flexible deployment options ranging from local GPUs to ephemeral cloud instances.
 
-### 1. Local Python Worker
-Runs on your local machine with a GPU. Use this for real-time single-image analysis.
+### 1. llama-server (Primary Worker)
+For maximum efficiency and lowest VRAM usage, the pre-compiled `llama-server` is the recommended backend. **It is remote-agnostic**: you can run it on your local hardware, or host it on remote cloud GPU providers. The Dispatcher automatically detects and communicates with any OpenAI-compatible endpoint.
+```bash
+./llama-server -m models/medgemma-1.5-4b.gguf --mmproj models/mmproj-model-f16.gguf -c 2048 --port 8001 --host 0.0.0.0
+```
+Configure `api.env` to point `INFERENCE_WORKERS` to its completions endpoint: `http://<WORKER_IP>:8001/v1/chat/completions`.
+
+### 2. Python Worker (Legacy/Custom Pipelines)
+While `llama-server` is generally superior for performance, the original Python worker maintains several highly useful qualities:
+- **Debugging**: It's much easier to trace tensor shapes and logic in native Python.
+- **Custom Architectures**: Useful for bleeding-edge HuggingFace models that are not yet supported by `llama.cpp`.
+- **Complex Logic**: Acts as a playground for advanced, custom multi-step pre/post-processing ML pipelines.
 ```bash
 uvicorn src.api.worker:app --host 127.0.0.1 --port 8001
 ```
-The Dispatcher API will route requests here if configured in `INFERENCE_WORKERS` (e.g., `http://127.0.0.1:8080/infer` via SSH tunnel).
 
-### 2. Native C++ Worker (llama-server)
-For maximum efficiency and lowest VRAM usage, bypass the Python worker and use the pre-compiled `llama-server`. The Dispatcher automatically detects OpenAI-compatible endpoints.
-```bash
-./llama-server -m models/medgemma-1.5-4b.gguf --mmproj models/mmproj-model-f16.gguf -c 2048 --port 8001 --host 127.0.0.1
-```
-Configure `api.env` to point to the completions endpoint: `http://127.0.0.1:8080/v1/chat/completions`.
+### 3. Cloud Batch Worker (TODO)
+Designed for ephemeral cloud GPUs. This feature is planned for future implementation and aims to support:
+1.  **Manual Execution**: Scripts and notebooks optimized for manual launch on popular cloud notebook providers.
+2.  **Automated Serverless Execution**: Full orchestration of cloud instances for automated batch processing without manual intervention.
 
-### 3. Cloud Batch Worker (Colab/Kaggle)
-Designed for ephemeral cloud GPUs. It polls Google Drive for batches of images, processes them, and uploads JSON reports.
-1.  Upload the project code and models to your notebook.
-2.  Set environment variables `GOOGLE_DRIVE_CREDENTIALS_JSON` and `GDRIVE_BATCH_FOLDER_ID`.
-3.  Run the adapter:
-    ```bash
-    python src/workers/cloud_adapter.py
-    ```
+## Image Preprocessing Features
 
-## Usage
+Image preprocessing is a strong feature of this project, allowing the user to significantly improve the quality of AI analysis using interactive, built-in fast commands. 
 
-Open Telegram and send the `/start` command to your bot. If your user ID is correctly whitelisted in the Google Drive JSON config, the bot will respond. 
+Since LLMs often squish non-square images causing spatial distortion, the bot automatically performs intelligent center-cropping (`process_main_image`).
 
-### Basic Commands
-- Send any single X-ray/MRI image as a **File** (uncompressed) to analyze it.
-- Use `/model` to select which hardware backend to use for your current conversation (e.g., CPU vs GPU).
-- Use `/status` to see which backend is active and if an image is currently loaded in memory.
-- Use `/clear` or `/end` to erase the current conversation context from the GPU's memory and start a new patient case.
-- Use `/analyze` to start a batch upload session for remote cloud workers.
+For detailed analysis of specific pathologies, users are prompted with an interactive **Region of Interest (ROI)** keyboard upon upload. The user can select:
+- 🔍 **Analyze Full Image**: Processes the standard center-crop.
+- ↖️ **Top Left** / ↗️ **Top Right** / ⏺ **Center** / ↙️ **Bottom Left** / ↘️ **Bottom Right**: Instructs the dispatcher to extract a 50% zoomed window at the specified quadrant, re-crop it to a square, and up-res it (`process_roi_image`). This essentially directs the model's visual attention to specific anomalies without losing resolution.
 
-### Advanced Usage: "Before & After" Comparisons
-You can send multiple images simultaneously to ask the AI to perform a comparative analysis (e.g., assessing disease progression).
-1. Select two images in your phone's gallery.
-2. Send them to the bot as an **Album** (Grouped Media).
-3. The bot will wait a few seconds to aggregate the album, then prompt you to select an inference worker.
-4. The AI will analyze both images in a single pass and provide a comparative report.
+## Administration & Statistics
 
-## Architecture & Performance Optimizations
+The platform provides built-in metrics and moderation tools for users with the `"admin"` role defined in the Google Drive whitelist.
 
-To run a complex multi-modal model like MedGemma-1.5 on constrained hardware (like a 6GB GTX 1060), this project implements several advanced optimizations under the hood:
-
-- **KV Caching & Multi-Slot Architecture (`-np 3`)**: The C++ server is configured to maintain multiple parallel context slots in VRAM. This allows the system to permanently cache the massive "System Prompts" for different user roles (e.g., one slot for Radiologists, one for Patients). When switching between user types, responses are nearly instantaneous because the prefix is already cached.
-- **GBNF Grammar Constraints**: Small models often suffer from "conversational drift" or hallucinations. We strictly enforce a physical token-generation grammar (`report.gbnf`) on the C++ server. This physically prevents the model from generating anything outside of the strict `Findings: ... Impression: ...` structure, reducing hallucinations by up to 3x.
-- **Custom Jinja Templating**: Gemma models notoriously crash if sent a native `"role": "system"` message in the API payload due to strict alternating turn requirements. Our dispatcher uses a custom `medgemma.jinja` template that seamlessly intercepts the system prompt and injects it safely into the user turn, preserving API compatibility without crashing the model.
+Admins can use the following commands directly in the Telegram chat:
+- `/admin_status`: Check real-time health, ping latency, and online/offline status for all configured worker endpoints.
+- `/admin_stats <daily|weekly|monthly|all>`: View global platform usage statistics, including total token counts and queries over the given period.
+- `/admin_user_stats <telegram_id>`: Audit activity metrics for a specific whitelisted user.
+- `/admin_worker_stats <period>`: Assess the performance and inference load distributed across specific workers.
+- `/refresh_whitelist`: Instantly sync user roles and permissions from Google Drive without needing to restart the bot.
 
 ## Whitelist Configuration
 
@@ -210,24 +175,12 @@ Here is an exemplary, fully-documented whitelist:
       "daily_limit": 50,
       "specialty": "Radiology",
       "show_thoughts": true
-    },
-    "987654321": {
-      "name": "Dr. Watson",
-      "role": "user",
-      "is_active": true,
-      "system_prompt_type": 2,
-      "allowed_workers": ["local_python"],
-      "show_thoughts": false
     }
   },
   "prompts": {
     "1": {
       "description": "Standard Radiologist",
-      "content": "You are an expert radiologist AI assistant. Be highly concise, factual, and direct. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
-    },
-    "2": {
-      "description": "Pediatric Radiologist",
-      "content": "You are an expert pediatric radiologist. Tailor your language for pediatric cases. If you need to reason before answering, ALWAYS wrap your reasoning entirely inside <think>...</think> tags."
+      "content": "You are an expert radiologist AI assistant..."
     }
   }
 }
@@ -235,50 +188,19 @@ Here is an exemplary, fully-documented whitelist:
 
 ### User Parameters
 - `name` *(string)*: Display name for the user.
-- `role` *(string)*: User role (`"admin"` or `"user"`). Admins can use the `/refresh_whitelist` command.
+- `role` *(string)*: User role (`"admin"` or `"user"`).
 - `is_active` *(boolean)*: Set to `false` to instantly revoke bot access for the user.
-- `system_prompt_type` *(integer)*: Links the user to a specific system prompt defined in the `"prompts"` section. Defaults to `1`.
-- `allowed_workers` *(list of strings)*: Restricts which inference routes the user can access (e.g., `["local_python"]`). If empty or omitted, all configured routes are allowed.
-- `daily_limit` *(integer)*: (Future use) Maximum number of requests allowed per day.
-- `specialty` *(string)*: (Future use) Medical specialty of the user for analytics.
-- `show_thoughts` *(boolean)*: If `true`, the bot will display the AI's internal reasoning (e.g., `<think>` tags or JSON thought blocks) before the final answer. Defaults to `false`.
+- `system_prompt_type` *(integer)*: Links the user to a specific system prompt.
+- `allowed_workers` *(list of strings)*: Restricts which inference routes the user can access.
+- `show_thoughts` *(boolean)*: If `true`, the bot will display the AI's internal reasoning.
+
+## Architecture & Performance Optimizations
+
+To run a complex multi-modal model like MedGemma-1.5 on constrained hardware, this project implements:
+- **KV Caching & Multi-Slot Architecture**: Maintains multiple parallel context slots in VRAM for instant prompt switching.
+- **GBNF Grammar Constraints**: Enforces a physical token-generation grammar (`report.gbnf`) to prevent hallucinations and strictly structure output.
+- **Custom Jinja Templating**: Ensures native API compatibility without model crashes.
 
 ## Troubleshooting
 
-### Deployment: Oracle Linux vs Ubuntu
-If deploying on Oracle Cloud Free Tier, **always choose the Ubuntu image**. Oracle Linux comes with aggressive SELinux policies that block `systemd` from executing scripts inside user directories (`/home/opc/`), leading to `203/EXEC` and `Permission denied` errors.
-
-### Reverse SSH Tunnel: `Connection refused`
-When creating the reverse SSH tunnel from your Local Server, you might encounter a `ssh: connect to host <your-cloud-server-ip> port 22: Connection refused` error. Ensure your cloud firewall (e.g., `ufw`) allows SSH traffic on port 22.
-
-### Reverse SSH Tunnel: `Warning: remote port forwarding failed for listen port 8080`
-This happens when an old, disconnected SSH session is still holding port 8080 open on your cloud server. 
-
-#### 1. Automatic Server-Side Cleanup
-To ensure the server automatically kills dead tunnel sessions and frees up ports, create a configuration file on your **Cloud Server**:
-```bash
-sudo tee /etc/ssh/sshd_config.d/tunnel-cleanup.conf <<EOF
-ClientAliveInterval 30
-ClientAliveCountMax 2
-EOF
-sudo systemctl restart ssh
-```
-
-#### 2. Automatic Client-Side Reconnection
-On your **Local Machine**, use a loop script to automatically reconnect if the tunnel drops or the port is temporarily busy. Save this as `start_tunnel.sh`:
-```bash
-#!/bin/bash
-while true; do
-    echo "[$(date)] Attempting to open tunnel..."
-    ssh -i /path/to/key.key -R 8080:127.0.0.1:8001 ubuntu@<cloud-ip> \
-        -N \
-        -o ServerAliveInterval=30 \
-        -o ServerAliveCountMax=2 \
-        -o ExitOnForwardFailure=yes
-    echo "[$(date)] Tunnel dropped or port busy. Retrying in 10s..."
-    sleep 10
-done
-```
-Make it executable: `chmod +x start_tunnel.sh`. 
-
-The `-o ExitOnForwardFailure=yes` flag is critical: it forces the SSH client to exit if it cannot bind the remote port, allowing the script to retry until the server frees it.
+For solutions to common deployment and SSH tunnel issues, please see [docs/troubleshooting.md](docs/troubleshooting.md).

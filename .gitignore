@@ -1,5 +1,4 @@
 # Python
-# Python
 __pycache__/
 *.py[cod]
 *$py.class
@@ -28,4 +27,4 @@ gdrive_credentials.json
 # Temporary files & directories
 /tmp/
 tmp/
-
+temp_images/
