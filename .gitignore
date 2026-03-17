@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Logs
+*.log
+
+# Databases
+*.sqlite3
+*.db
+
+# Credentials & Secrets
+**/gdrive_credentials.json
+gdrive_credentials.json
+
+# Temporary files & directories
+/tmp/
+tmp/
+temp_images/

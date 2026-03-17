@@ -1,0 +1,357 @@
+from fastapi import APIRouter, Form, Depends, HTTPException, File, UploadFile
+from typing import Annotated, List, Dict
+import aiosqlite
+import json
+import base64
+from src.api.db.database import get_db
+from src.api.services.auth import auth_service
+from src.api.services.chat_manager import chat_manager
+from src.api.services.image_processor import image_processor
+from src.api.config import settings
+from src.shared.services.gdrive_storage import GDriveStorageService
+
+router = APIRouter(prefix="/api/v1/chat")
+
+@router.get("/routes")
+async def get_routes():
+    """
+    Returns available inference routes configured in the environment.
+    Used by the Telegram Bot to dynamically generate the selection menu.
+    """
+    # Expose only the route_id and human-readable name, NOT the internal URLs
+    routes = [{"id": r_id, "name": r_data.get("name", r_id)} for r_id, r_data in settings.inference_workers.items()]
+    return {"status": "success", "data": {"routes": routes}}
+
+@router.get("/workers/status")
+async def get_workers_status():
+    """
+    Actively pings configured inference workers to check their health.
+    """
+    statuses = await chat_manager.check_workers_health()
+    return {"status": "success", "data": {"workers": statuses}}
+
+@router.get("/session")
+async def get_session_info(telegram_id: int, db: aiosqlite.Connection = Depends(get_db)):
+    """
+    Returns information about the user's current active session.
+    """
+    cursor = await db.execute("SELECT session_id, current_route, has_active_image FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
+    row = await cursor.fetchone()
+    if row:
+        return {"status": "success", "data": {"active_session": True, "route": row["current_route"], "has_image": bool(row["has_active_image"])}}
+    return {"status": "success", "data": {"active_session": False}}
+
+@router.post("/session/route")
+async def set_session_route(data: dict, db: aiosqlite.Connection = Depends(get_db)):
+    telegram_id = data.get("telegram_id")
+    route = data.get("route")
+    if not telegram_id or not route:
+        raise HTTPException(status_code=400, detail="telegram_id and route required.")
+
+    if route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail="Invalid route.")
+
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
+        raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        raise HTTPException(status_code=403, detail="User not permitted to use worker.")
+
+    # Just get or create session with the new default route, which will update it
+    await chat_manager.get_or_create_session(telegram_id, db, default_route=route)
+    return {"status": "success", "message": "Route updated."}
+
+@router.post("/message")
+async def process_message(
+    telegram_id: Annotated[int, Form()],
+    text: Annotated[str | None, Form()] = None,
+    images: List[UploadFile] = File(default=[]),
+    route: Annotated[str | None, Form()] = None,
+    roi_preset: Annotated[str | None, Form()] = None,
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
+        raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    if not text and not images:
+        raise HTTPException(status_code=400, detail="Must provide text or image.")
+
+    # We need to get or create the session first to resolve the route if it's omitted
+    # But if there are new images, we clear the old session and its route anyway
+    # UNLESS the previous session only contained text (has_active_image is False).
+    if images:
+        cursor = await db.execute("SELECT has_active_image FROM session_contexts WHERE telegram_id = ?", (telegram_id,))
+        row = await cursor.fetchone()
+        if row and row["has_active_image"]:
+            await chat_manager.clear_session(telegram_id, db)
+
+    # Determine default fallback route if none provided and no session exists
+    fallback_route = next(iter(settings.inference_workers.keys())) if settings.inference_workers else None
+
+    # This will load the session's current route if `route` is None.
+    # If `route` is provided, it updates the session's current route.
+    session_id, active_route = await chat_manager.get_or_create_session(telegram_id, db, default_route=route)
+
+    # If the route wasn't explicitly provided, use the session's active route.
+    # If the session didn't have one either, use the fallback.
+    resolved_route = route or active_route or fallback_route
+
+    # If the resolved route (e.g. from an old session) is no longer valid, override it
+    if resolved_route and resolved_route not in settings.inference_workers:
+        resolved_route = fallback_route
+        # Update the session with the corrected fallback route
+        if resolved_route:
+            await chat_manager.get_or_create_session(telegram_id, db, default_route=resolved_route)
+
+    if not resolved_route or resolved_route not in settings.inference_workers:
+        raise HTTPException(status_code=400, detail=f"No valid inference workers configured.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and resolved_route not in allowed_workers:
+        # If the resolved route is not allowed, try finding the first allowed one
+        valid_allowed = [w for w in allowed_workers if w in settings.inference_workers]
+        if valid_allowed:
+            resolved_route = valid_allowed[0]
+            # Update session with the legally fallback route
+            await chat_manager.get_or_create_session(telegram_id, db, default_route=resolved_route)
+        else:
+            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {resolved_route}")
+
+    log_id = await chat_manager.create_interaction_log(
+        telegram_id=telegram_id,
+        route=resolved_route,
+        task_type="single",
+        images_count=len(images),
+        db=db
+    )
+
+    try:
+        await chat_manager.update_interaction_log(log_id, "processing", db)
+
+        # 1. Build current user message content
+        current_content = []
+        if images:
+            if roi_preset and len(images) == 1:
+                # Two-Image ROI Strategy
+                image = images[0]
+                if image.content_type not in ["image/jpeg", "image/png"]:
+                    raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
+                file_content = await image.read()
+                
+                main_img_bytes = image_processor.process_main_image(file_content)
+                roi_img_bytes = image_processor.process_roi_image(file_content, roi_preset)
+                
+                main_b64 = base64.b64encode(main_img_bytes).decode('utf-8')
+                roi_b64 = base64.b64encode(roi_img_bytes).decode('utf-8')
+                
+                # Add images to content
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{main_b64}"}})
+                current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{roi_b64}"}})
+                
+                # Inject automatic explanation
+                roi_name_clean = roi_preset.replace("_", " ")
+                auto_prompt = f"[System: Image 1 is the full overview. Image 2 is a zoomed-in detail of the {roi_name_clean}.]"
+                current_content.append({"type": "text", "text": auto_prompt})
+                
+            else:
+                for i, image in enumerate(images):
+                    if image.content_type not in ["image/jpeg", "image/png"]:
+                        raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
+                    file_content = await image.read()
+                    
+                    # Pre-process image to a square if it's a single upload without ROI,
+                    # or batch images, to avoid distortion on the worker side
+                    processed_bytes = image_processor.process_main_image(file_content)
+                    image_b64 = base64.b64encode(processed_bytes).decode('utf-8')
+                    
+                    # Explicitly label images if there is more than one, to help the model with "Before/After" comparisons
+                    if len(images) > 1:
+                        display_name = image.filename if image.filename and not image.filename.startswith("image_") else f"Image {i + 1}"
+                        current_content.append({"type": "text", "text": f"{display_name}:"})
+                        
+                    current_content.append({"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}})
+            
+            await chat_manager.set_active_image(session_id, True, db)
+        
+        if text:
+            current_content.append({"type": "text", "text": text})
+        elif not images:
+            current_content.append({"type": "text", "text": "Please continue."})
+
+        # Save current user message to DB as JSON string
+        await chat_manager.add_message(session_id, "user", json.dumps(current_content), db)
+
+        # 2. Retrieve history and construct messages array
+        full_history = await chat_manager.get_history(session_id, db)
+        
+        # Trim history to save context, BUT always keep the first message (which contains the image)
+        # to ensure the multimodal projector always sees the image and KV cache works.
+        if len(full_history) > 6:
+            trimmed_history = [full_history[0]] + full_history[-5:]
+        else:
+            trimmed_history = full_history
+
+        messages = []
+        for msg in trimmed_history:
+            try:
+                # We store complex structures as JSON in DB now
+                parsed_content = json.loads(msg["content"])
+            except json.JSONDecodeError:
+                # Fallback for older text-only DB entries
+                parsed_content = [{"type": "text", "text": msg["content"]}]
+            messages.append({"role": msg["role"], "content": parsed_content})
+
+        # Get system prompt configured for user
+        system_prompt_type = user_config.get("system_prompt_type", 1)
+        system_prompt_text = await auth_service.get_system_prompt(system_prompt_type, db)
+
+        # 3. Dispatch full messages array to worker
+        # The worker now returns a structure that might include telemetry
+        worker_response = await chat_manager.dispatch_inference_to_worker(messages, system_prompt_text, resolved_route, system_prompt_type)
+
+        # Handle both legacy string response and new dict response with telemetry        
+        if isinstance(worker_response, dict):
+            response_text = worker_response.get("report", "Error")
+            thought_text = worker_response.get("thought", "")
+            telemetry = worker_response.get("telemetry", {})
+        else:
+            response_text = worker_response
+            thought_text = ""
+            telemetry = {}
+
+        # 4. Save assistant response to history
+        assistant_content = [{"type": "text", "text": response_text}]
+        await chat_manager.add_message(session_id, "assistant", json.dumps(assistant_content), db)
+        
+        final_response = f"[{resolved_route.upper()}-WORKER] {response_text}"
+        if thought_text and user_config.get("show_thoughts"):
+            final_response = f"🤔 Thoughts:\n{thought_text}\n\n{final_response}"
+        
+        # Update log with telemetry
+        await chat_manager.update_interaction_log(
+            log_id, "completed", db,
+            latency=telemetry.get("latency"),
+            input_tokens=telemetry.get("input_tokens"),
+            output_tokens=telemetry.get("output_tokens")
+        )
+
+        return {
+            "status": "success", 
+            "data": {
+                "response": final_response,
+                "thought": thought_text,
+                "log_id": log_id,
+                "telemetry": telemetry
+            }
+        }
+    except Exception as e:
+        await chat_manager.update_interaction_log(log_id, "failed", db)
+        # Log the full error for debugging
+        print(f"!!! DISPATCHER ERROR in /message: {e}")
+        raise HTTPException(status_code=500, detail=f"An internal error occurred: {e}")
+
+@router.post("/clear")
+async def clear_chat(data: dict, db: aiosqlite.Connection = Depends(get_db)):
+    telegram_id = data.get("telegram_id")
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="telegram_id required.")
+
+    await chat_manager.clear_session(telegram_id, db)
+    return {"status": "success", "message": "Session cleared successfully."}
+
+@router.post("/batch")
+async def process_batch(
+    telegram_id: Annotated[int, Form()],
+    route: Annotated[str, Form()],
+    text: Annotated[str | None, Form()] = None,
+    images: List[UploadFile] = File(...),
+    db: aiosqlite.Connection = Depends(get_db)
+):
+    user_config = await auth_service.get_user_config(telegram_id, db)
+    if not user_config or not user_config.get("is_active"):
+        raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    if not images:
+        raise HTTPException(status_code=400, detail="Must provide images for batch processing.")
+
+    if len(images) > 20:
+        raise HTTPException(status_code=400, detail="Maximum 20 images allowed per batch.")
+
+    if route not in settings.inference_workers:
+        if settings.inference_workers:
+            # Fallback to the first available worker if an invalid or legacy route is provided
+            route = next(iter(settings.inference_workers.keys()))
+        else:
+            raise HTTPException(status_code=400, detail=f"No inference workers configured.")
+
+    allowed_workers = json.loads(user_config.get("allowed_workers", "[]"))
+    if allowed_workers and route not in allowed_workers:
+        # If the fallback route is still not allowed, try finding the first allowed one
+        valid_allowed = [w for w in allowed_workers if w in settings.inference_workers]
+        if valid_allowed:
+            route = valid_allowed[0]
+        else:
+            raise HTTPException(status_code=403, detail=f"User not permitted to use worker: {route}")
+
+    log_id = await chat_manager.create_interaction_log(
+        telegram_id=telegram_id,
+        route=route,
+        task_type="batch",
+        images_count=len(images),
+        db=db
+    )
+
+    try:
+        await chat_manager.update_interaction_log(log_id, "processing", db)
+
+        gdrive_service = GDriveStorageService(
+            credentials_json=settings.google_drive_credentials_json,
+            root_folder_id=settings.gdrive_batch_folder_id
+        )
+
+        files_data = []
+        for image in images:
+            if image.content_type not in ["image/jpeg", "image/png"]:
+                raise HTTPException(status_code=400, detail="Only JPEG/PNG supported.")
+            content = await image.read()
+            files_data.append((image.filename, content, image.content_type))
+
+        uploaded_ids = gdrive_service.upload_batch(telegram_id, files_data)
+
+        # Batch is successfully queued in GDrive for processing
+        await chat_manager.update_interaction_log(log_id, "completed", db)
+
+        return {
+            "status": "queued",
+            "data": {
+                "message": f"Batch accepted and routed to {route}.",
+                "log_id": log_id,
+                "images_count": len(uploaded_ids)
+            }
+        }
+    except Exception as e:
+        await chat_manager.update_interaction_log(log_id, "failed", db)
+        raise HTTPException(status_code=500, detail=f"Failed to process batch: {e}")
+
+@router.delete("/batch")
+async def cancel_batch(data: dict, db: aiosqlite.Connection = Depends(get_db)):
+    telegram_id = data.get("telegram_id")
+    if not telegram_id:
+        raise HTTPException(status_code=400, detail="telegram_id required.")
+
+    if not await auth_service.is_user_whitelisted(telegram_id, db):
+        raise HTTPException(status_code=401, detail="User not in whitelist.")
+
+    gdrive_service = GDriveStorageService(
+        credentials_json=settings.google_drive_credentials_json,
+        root_folder_id=settings.gdrive_batch_folder_id
+    )
+
+    success = gdrive_service.delete_user_folder(telegram_id)
+    if success:
+        return {"status": "success", "data": {"message": "Batch cancelled and files cleaned up."}}
+    else:
+        return {"status": "success", "data": {"message": "No active batch files found or error during cleanup."}}

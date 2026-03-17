@@ -1,0 +1,25 @@
+services:
+  api:
+    build:
+      context: .
+      dockerfile: src/api/Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./local_data.db:/app/local_data.db
+      - ./gdrive_credentials.json:/app/gdrive_credentials.json
+    env_file:
+      - api.env
+    restart: always
+
+  bot:
+    build:
+      context: .
+      dockerfile: src/bot/Dockerfile
+    volumes:
+      - ./gdrive_credentials.json:/app/gdrive_credentials.json
+    env_file:
+      - bot.env
+    depends_on:
+      - api
+    restart: always

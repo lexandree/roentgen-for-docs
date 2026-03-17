@@ -1,0 +1,18 @@
+[Unit]
+Description=Roentgen FastAPI Dispatcher Service
+After=network.target
+
+[Service]
+# CHANGE 'ubuntu' to your VM username (e.g., 'opc' on Oracle Linux)
+User=ubuntu
+Group=www-data
+# CHANGE to your project root path
+WorkingDirectory=/home/ubuntu/roentgen_for_docs
+# Assumes a virtualenv named 'venv' in the project root
+ExecStart=/home/ubuntu/roentgen_for_docs/venv/bin/uvicorn src.api.main:app --host 0.0.0.0 --port 8000
+Restart=always
+# Configuration should be in api.env in the root
+EnvironmentFile=/home/ubuntu/roentgen_for_docs/api.env
+
+[Install]
+WantedBy=multi-user.target
