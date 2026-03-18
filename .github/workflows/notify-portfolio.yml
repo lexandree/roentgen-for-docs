@@ -6,8 +6,7 @@ on:
       - main
       - master
     paths:
-      - 'cv-short.md'
-      - 'cv-long.md'
+      - 'portfolio-export.md'
 
 jobs:
   notify:
