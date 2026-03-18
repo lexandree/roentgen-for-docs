@@ -5,7 +5,7 @@ pubDate: 2026-03-18
 tags: ["FastAPI", "llama.cpp", "aiogram", "MedGemma", "Edge AI"]
 githubUrl: "https://github.com/lexandree/roentgen-for-docs"
 featured: false
-order: 5
+order: 4
 ---
 
 ## Problem Statement
