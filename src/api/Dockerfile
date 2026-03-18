@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy the requirements file into the container at /app
-COPY src/api/requirements.txt /app/src/api/requirements.txt
+COPY src/api/requirements-dispatcher.txt /app/src/api/requirements.txt
 
 # Install any needed packages specified in requirements.txt
 RUN pip install --no-cache-dir -r /app/src/api/requirements.txt
