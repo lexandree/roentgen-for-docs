@@ -12,7 +12,7 @@ jobs:
   notify:
     runs-on: ubuntu-latest
     steps:
-      - name: Trigger Portfolio Rebuild
+      - name: Send repository dispatch to Portfolio
         uses: peter-evans/repository-dispatch@v3
         with:
           # A Personal Access Token (PAT) with "repo" scope is required to trigger workflows in another repository.
@@ -23,7 +23,7 @@ jobs:
           repository: lexandree/schaufenster
           
           # The custom event name that the portfolio repository will listen for.
-          event-type: project-cv-updated
+          event-type: portfolio-update
           
           # Optional payload to let the portfolio know which project was updated.
-          client-payload: '{"project": "roentgen_for_docs"}'
+          client-payload: '{"project": "roentgen-for-docs"}'
