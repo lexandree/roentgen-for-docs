@@ -1,6 +1,6 @@
 ---
 title: "Roentgen for Docs"
-description: "A secure, privacy-first diagnostic assistant bridging open-weights medical LLMs (MedGemma) with a convenient Telegram interface via Secure Reverse SSH and local edge inference."
+description: "A secure, privacy-first diagnostic assistant bridging open-weights medical LLMs (MedGemma) with a convenient Telegram interface via a flexible Hybrid/BYOC architecture."
 pubDate: 2026-03-18
 tags: ["FastAPI", "llama.cpp", "aiogram", "MedGemma", "Edge AI"]
 githubUrl: "https://github.com/lexandree/roentgen-for-docs"
@@ -13,7 +13,7 @@ Medical professionals need access to state-of-the-art diagnostic LLMs (like MedG
 
 ## Approach / Architecture
 The architecture strictly decouples the public-facing interface from the inference engine to guarantee data residency and security.
-- **Privacy-First Connectivity**: A cloud-hosted Telegram bot (`aiogram`) relays inputs to a local FastAPI dispatcher via a Secure Reverse SSH tunnel. Zero persistent patient data resides on the public cloud.
+- **Hybrid / BYOC Architecture**: A permanent cloud-hosted control plane (Telegram bot + FastAPI dispatcher) securely routes traffic to ephemeral, user-owned inference workers (e.g., a local Clinic PC via Reverse SSH Tunnel, or an on-demand RunPod GPU). Zero persistent patient data resides on the public cloud.
 - **Optimized Edge Inference**: Powered by `llama.cpp` (`llama-server`) running an 8-bit quantized MedGemma-1.5-4B model (Q8_0) on consumer hardware (e.g., GTX 1060 6GB). Employs a multi-slot KV cache architecture (`-np 3`) to permanently cache multiple system prompts (e.g., Radiologist vs. Pediatrician personas), enabling near-instantaneous context switching.
 - **Advanced Image Preprocessing**: Implements intelligent center-cropping to prevent non-square image distortion by the LLM's visual projector. Features interactive Region of Interest (ROI) commands, allowing doctors to dynamically extract, square-crop, and up-res specific quadrants (e.g., Top Left, Center) for targeted, high-resolution analysis without spatial loss.
 - **Strict Output Constraints**: Uses GBNF (GGML BNF) grammar constraints to physically force the model's token generation into structured clinical reporting formats (`Findings: ... Impression: ...`), drastically reducing hallucinations.
