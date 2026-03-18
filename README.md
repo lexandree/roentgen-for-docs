@@ -111,6 +111,29 @@ This machine runs the Telegram bot and forwards requests to your dispatcher. A f
     python -m src.bot.main
     ```
 
+## Deployment Strategies
+
+The Roentgen for Docs architecture is highly modular, allowing for flexible deployment across various cloud and local environments.
+
+### 1. Monolithic Cloud (Standard)
+Both the **Telegram Bot** and the **Dispatcher API** run on the same low-cost cloud instance (e.g., Oracle Cloud Ampere, AWS, or DigitalOcean).
+- **Connectivity:** The Bot communicates with the Dispatcher via internal Docker networking or `localhost`.
+- **Best For:** Simple production setups and low-latency interaction between the bot and its session database.
+- **Setup:** Use `docker-compose.yml` as provided. Set `LOCAL_API_URL` to `http://api:8000/api/v1`.
+
+### 2. Distributed Cloud
+The **Telegram Bot** and the **Dispatcher API** are hosted on separate cloud providers or regions.
+- **Connectivity:** The Bot communicates with the Dispatcher via a public HTTP/HTTPS endpoint.
+- **Best For:** Scenarios requiring high availability or physical separation of user-facing servers and core patient-log databases.
+- **Setup:** Deploy each service independently. Set `LOCAL_API_URL` to the public URL of your Dispatcher.
+
+### 3. Hybrid / BYOC (Bring Your Own Compute)
+The **Bot** and **Dispatcher** reside in a persistent cloud environment (always-on control plane), while the **Inference Worker** runs on specialized hardware: either a **Local Clinic PC** (for maximum privacy) or an **On-Demand Cloud GPU** (e.g., RunPod, Lambda Labs) for cost-efficiency.
+- **Connectivity:** 
+  - *For Local Hardware:* Uses a **Secure Reverse SSH Tunnel** to bypass NAT/Firewalls.
+  - *For Cloud GPUs:* Uses direct HTTP requests (to the worker's API endpoint) or an SSH tunnel for added security.
+- **Best For:** Professionals who want an always-online bot but prefer to run heavy models on their own hardware or rent GPUs only when needed.
+
 ## Worker Infrastructure
 
 The system supports multiple worker types for model inference, allowing flexible deployment options ranging from local GPUs to ephemeral cloud instances.
